@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import Optional
 from backend.dependencies.__init__ import get_db
@@ -18,6 +18,7 @@ from sqlalchemy import or_
 from backend.core.pagination import PaginationParams, PagedResponse
 from backend.core.rate_limiter import limiter
 from backend.core.cache import get_cached, set_cached, invalidate_cache
+from backend.services.notification_services import log_request_created, log_donation_event
 
 
 router = APIRouter(prefix="/blood-requests", tags=["Blood Requests"])
@@ -44,16 +45,14 @@ def build_request_response(req: BloodRequest) -> dict:
 # ── HOSPITAL ──────────────────────────────────────────────────────────────────
 
 @router.post("/", response_model=BloodRequestResponse, status_code=status.HTTP_201_CREATED)
-# @limiter.limit("10/minute")
+@limiter.limit("10/minute")
 def create_blood_request(
-    data:             BloodRequestCreate,
-    current_hospital: Hospital = Depends(get_current_hospital),
-    db:               Session = Depends(get_db),
+    request:           Request,
+    data:              BloodRequestCreate,
+    background_tasks:  BackgroundTasks,              # ← inject this
+    current_hospital:  Hospital = Depends(get_current_hospital),
+    db:                Session = Depends(get_db),
 ):
-    """
-    Only verified hospitals can create blood requests.
-    get_current_hospital already checks is_verified — no extra check needed.
-    """
     blood_request = BloodRequest(
         hospital_id  = current_hospital.id,
         blood_group  = data.blood_group,
@@ -67,6 +66,14 @@ def create_blood_request(
     db.refresh(blood_request)
 
     invalidate_cache("blood_requests:*")
+
+    # Add background task — runs after response is sent
+    background_tasks.add_task(
+        log_request_created,
+        request_id    = blood_request.id,
+        hospital_name = current_hospital.name,
+        blood_group   = data.blood_group.value,
+    )
 
     return build_request_response(blood_request)
 
@@ -226,14 +233,11 @@ def accept_blood_request(
 
 @router.post("/{request_id}/fulfil", response_model=BloodRequestResponse)
 def fulfil_blood_request(
-    request_id:   int,
-    current_user: User = Depends(get_current_user),
-    db:           Session = Depends(get_db),
+    request_id:       int,
+    background_tasks: BackgroundTasks,              # ← inject this
+    current_user:     User = Depends(get_current_user),
+    db:               Session = Depends(get_db),
 ):
-    """
-    Only the assigned donor can mark as fulfilled.
-    Request must be in ACCEPTED state.
-    """
     donor = db.query(Donor).filter(Donor.user_id == current_user.id).first()
     if not donor:
         raise HTTPException(status_code=403, detail="Only donors can fulfil requests.")
@@ -248,7 +252,6 @@ def fulfil_blood_request(
             detail="You are not the assigned donor for this request.",
         )
 
-    # State guard
     if blood_request.status != RequestStatusEnum.ACCEPTED:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -260,6 +263,14 @@ def fulfil_blood_request(
     db.refresh(blood_request)
 
     invalidate_cache("blood_requests:*")
+
+    # Add background task — runs after response is sent
+    background_tasks.add_task(
+        log_donation_event,
+        request_id = blood_request.id,
+        donor_id   = donor.id,
+        db         = db,
+    )
 
     return build_request_response(blood_request)
 
