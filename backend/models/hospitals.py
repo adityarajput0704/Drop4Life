@@ -1,6 +1,4 @@
-# app/models/hospital.py
-
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, JSON
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from backend.database import Base
@@ -9,24 +7,28 @@ from backend.database import Base
 class Hospital(Base):
     __tablename__ = "hospitals"
 
-    id              = Column(Integer, primary_key=True, index=True)
-    name            = Column(String(200), nullable=False)
-    address         = Column(String(500), nullable=False)
-    city            = Column(String(100), nullable=False, index=True)  # index=True: fast city lookups
-    phone           = Column(String(20), nullable=False)
-    email           = Column(String(255), unique=True, nullable=True)
-    verified        = Column(Boolean, default=False, nullable=False)
+    id               = Column(Integer, primary_key=True, index=True)
 
-    # JSON column: stores {"A+": 10, "O-": 5} directly in PostgreSQL
-    # Flexible — no need for a separate inventory table at this stage
-    blood_inventory = Column(JSON, default=dict)
+    # Login identity — separate from User table entirely
+    firebase_uid     = Column(String, unique=True, nullable=False, index=True)
+    email            = Column(String, unique=True, nullable=False, index=True)
 
-    is_active       = Column(Boolean, default=True, nullable=False)
-    created_at      = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at      = Column(DateTime(timezone=True), onupdate=func.now())
+    # Hospital details
+    name             = Column(String(200), nullable=False)
+    phone            = Column(String(20), nullable=False)
+    address          = Column(String(300), nullable=False)
+    city             = Column(String(100), nullable=False)
+    registration_no  = Column(String(100), unique=True, nullable=False)
+    
+    # Verification — auto-approved, admin can revoke
+    is_verified      = Column(Boolean, default=True, nullable=False)
+    is_active        = Column(Boolean, default=True, nullable=False)
 
-    # One hospital can have many blood requests posted against it
-    blood_requests  = relationship("BloodRequest", back_populates="hospital")
+    created_at       = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at       = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # One hospital can post many blood requests
+    blood_requests   = relationship("BloodRequest", back_populates="hospital")
 
     def __repr__(self):
         return f"<Hospital {self.name} ({self.city})>"

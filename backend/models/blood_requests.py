@@ -1,51 +1,59 @@
-# app/models/blood_request.py
-
-from sqlalchemy import (
-    Column, Integer, String, DateTime,
-    Enum as SAEnum, ForeignKey, Text
-)
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SAEnum, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from backend.database import Base
-from backend.models.donor import BloodGroupEnum
 import enum
 
 
 class UrgencyEnum(str, enum.Enum):
+    LOW      = "low"
+    MEDIUM   = "medium"
+    HIGH     = "high"
     CRITICAL = "critical"
-    URGENT   = "urgent"
-    NORMAL   = "normal"
 
 
-class StatusEnum(str, enum.Enum):
+class RequestStatusEnum(str, enum.Enum):
     OPEN      = "open"
+    ACCEPTED  = "accepted"
     FULFILLED = "fulfilled"
     CANCELLED = "cancelled"
+
+
+class BloodGroupEnum(str, enum.Enum):
+    A_POS  = "A+"
+    A_NEG  = "A-"
+    B_POS  = "B+"
+    B_NEG  = "B-"
+    AB_POS = "AB+"
+    AB_NEG = "AB-"
+    O_POS  = "O+"
+    O_NEG  = "O-"
 
 
 class BloodRequest(Base):
     __tablename__ = "blood_requests"
 
-    id                 = Column(Integer, primary_key=True, index=True)
-    blood_group_needed = Column(SAEnum(BloodGroupEnum), nullable=False)
-    hospital_id        = Column(Integer, ForeignKey("hospitals.id"), nullable=False)
-    donor_id           = Column(Integer, ForeignKey("donors.id"), nullable=True)
-    patient_name       = Column(String(100), nullable=False)
-    contact_phone      = Column(String(20), nullable=False)
-    units_needed       = Column(Integer, nullable=False, default=1)
-    urgency            = Column(SAEnum(UrgencyEnum), nullable=False)
-    status             = Column(
-        SAEnum(StatusEnum),
+    id              = Column(Integer, primary_key=True, index=True)
+
+    # Hospital that created this request
+    hospital_id     = Column(Integer, ForeignKey("hospitals.id"), nullable=False)
+
+    # Donor who accepted (null until accepted)
+    donor_id        = Column(Integer, ForeignKey("donors.id"), nullable=True)
+
+    blood_group     = Column(SAEnum(BloodGroupEnum), nullable=False)
+    units_needed    = Column(Integer, nullable=False, default=1)
+    patient_name    = Column(String(200), nullable=False)
+    urgency         = Column(SAEnum(UrgencyEnum), nullable=False, default=UrgencyEnum.MEDIUM)
+    status          = Column(
+        SAEnum(RequestStatusEnum),
         nullable=False,
-        default=StatusEnum.OPEN,
+        default=RequestStatusEnum.OPEN
     )
-    notes              = Column(Text, nullable=True)
-    created_at         = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at         = Column(DateTime(timezone=True), onupdate=func.now())
+    notes           = Column(Text, nullable=True)
+    created_at      = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at      = Column(DateTime(timezone=True), onupdate=func.now())
 
-    # Relationships — SQLAlchemy loads related objects automatically
-    hospital           = relationship("Hospital", back_populates="blood_requests")
-    donor              = relationship("Donor", back_populates="donations")
-
-    def __repr__(self):
-        return f"<BloodRequest {self.blood_group_needed} @ {self.hospital_id}>"
+    # Relationships
+    hospital        = relationship("Hospital", back_populates="blood_requests")
+    donor           = relationship("Donor", back_populates="donations")

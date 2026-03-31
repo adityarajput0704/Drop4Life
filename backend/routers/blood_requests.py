@@ -1,235 +1,365 @@
-# app/routers/blood_requests.py
-
-from fastapi import APIRouter, HTTPException, Query, Depends
-from sqlalchemy.orm import Session, joinedload
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from sqlalchemy.orm import Session
 from typing import Optional
-
-from backend.dependencies import get_db
-from backend.models.blood_requests import BloodRequest, UrgencyEnum, StatusEnum
-from backend.models.hospitals import Hospital
+from backend.dependencies.__init__ import get_db
+from backend.models.blood_requests import BloodRequest, RequestStatusEnum
 from backend.models.donor import Donor
+from backend.models.hospitals import Hospital
+from backend.models.user import User
 from backend.schemas.blood_request import (
     BloodRequestCreate,
-    BloodRequestUpdate,
     BloodRequestResponse,
     BloodRequestListResponse,
-    UrgencyLevel,
+    RequestFilterParams
 )
-from backend.schemas.donor import BloodGroup
+from backend.dependencies.auth import get_current_user, get_current_hospital, require_admin
+from backend.utils.blood_compatibility import get_compatible_donor_groups
+from sqlalchemy import or_
+from backend.core.pagination import PaginationParams, PagedResponse
+from backend.core.rate_limiter import limiter
+from backend.core.cache import get_cached, set_cached, invalidate_cache
+
 
 router = APIRouter(prefix="/blood-requests", tags=["Blood Requests"])
 
 
-@router.get("", response_model=BloodRequestListResponse)
-def get_blood_requests(
-    city:        Optional[str]        = Query(None, description="Filter by hospital city"),
-    blood_group: Optional[BloodGroup] = Query(None, description="Filter by blood group needed"),
-    urgency:     Optional[UrgencyLevel] = Query(None, description="Filter by urgency"),
-    status:      Optional[str]        = Query("open", description="Filter by status"),
-    db:          Session              = Depends(get_db),
+def build_request_response(req: BloodRequest) -> dict:
+    return {
+        "id":             req.id,
+        "blood_group":    req.blood_group,
+        "units_needed":   req.units_needed,
+        "patient_name":   req.patient_name,
+        "urgency":        req.urgency,
+        "status":         req.status,
+        "notes":          req.notes,
+        "created_at":     req.created_at,
+        "hospital_name":  req.hospital.name,
+        "hospital_city":  req.hospital.city,
+        "hospital_phone": req.hospital.phone,
+        "donor_name":     req.donor.user.full_name if req.donor else None,
+        "donor_phone":    req.donor.user.phone     if req.donor else None,
+    }
+
+
+# ── HOSPITAL ──────────────────────────────────────────────────────────────────
+
+@router.post("/", response_model=BloodRequestResponse, status_code=status.HTTP_201_CREATED)
+# @limiter.limit("10/minute")
+def create_blood_request(
+    data:             BloodRequestCreate,
+    current_hospital: Hospital = Depends(get_current_hospital),
+    db:               Session = Depends(get_db),
 ):
     """
-    List blood requests with optional filters.
-
-    joinedload tells SQLAlchemy to fetch hospital and donor
-    in the SAME query using a SQL JOIN — not separate queries.
-
-    Without joinedload: 1 query for requests + N queries for hospitals
-    = N+1 problem (kills performance at scale)
-    With joinedload: always exactly 1 query, regardless of result size.
+    Only verified hospitals can create blood requests.
+    get_current_hospital already checks is_verified — no extra check needed.
     """
-    query = (
-        db.query(BloodRequest)
-        .options(
-            joinedload(BloodRequest.hospital),  # JOIN hospitals table
-            joinedload(BloodRequest.donor),     # JOIN donors table
-        )
+    blood_request = BloodRequest(
+        hospital_id  = current_hospital.id,
+        blood_group  = data.blood_group,
+        units_needed = data.units_needed,
+        patient_name = data.patient_name,
+        urgency      = data.urgency,
+        notes        = data.notes,
     )
-
-    filters_applied = {}
-
-    if blood_group:
-        query = query.filter(BloodRequest.blood_group_needed == blood_group.value)
-        filters_applied["blood_group"] = blood_group
-
-    if urgency:
-        query = query.filter(BloodRequest.urgency == urgency.value)
-        filters_applied["urgency"] = urgency
-
-    if status:
-        query = query.filter(BloodRequest.status == status)
-        filters_applied["status"] = status
-
-    # Filter by hospital city — this queries ACROSS tables
-    if city:
-        query = query.join(BloodRequest.hospital).filter(
-            Hospital.city.ilike(f"%{city}%")
-        )
-        filters_applied["city"] = city
-
-    requests = query.all()
-
-    return BloodRequestListResponse(
-        total_found=len(requests),
-        filters_applied=filters_applied,
-        requests=requests,
-    )
-
-
-@router.get("/{request_id}", response_model=BloodRequestResponse)
-def get_blood_request(request_id: int, db: Session = Depends(get_db)):
-    request = (
-        db.query(BloodRequest)
-        .options(
-            joinedload(BloodRequest.hospital),
-            joinedload(BloodRequest.donor),
-        )
-        .filter(BloodRequest.id == request_id)
-        .first()
-    )
-
-    if request is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Blood request {request_id} not found",
-        )
-
-    return request
-
-
-@router.post("/create", response_model=BloodRequestResponse, status_code=201)
-def create_blood_request(request_data: BloodRequestCreate, db: Session = Depends(get_db)):
-    # Verify hospital exists before creating request against it
-    hospital = db.query(Hospital).filter(
-        Hospital.id == request_data.hospital_id,
-        Hospital.is_active == True,
-    ).first()
-
-    if hospital is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Hospital {request_data.hospital_id} not found",
-        )
-
-    new_request = BloodRequest(
-        blood_group_needed=request_data.blood_group_needed.value,
-        hospital_id=request_data.hospital_id,
-        patient_name=request_data.patient_name,
-        contact_phone=request_data.contact_phone,
-        units_needed=request_data.units_needed,
-        urgency=request_data.urgency.value,
-        notes=request_data.notes,
-        status=StatusEnum.OPEN,
-    )
-
-    db.add(new_request)
-    db.commit()
-    db.refresh(new_request)
-
-    # After refresh, relationships aren't auto-loaded — fetch with joinedload
-    return (
-        db.query(BloodRequest)
-        .options(
-            joinedload(BloodRequest.hospital),
-            joinedload(BloodRequest.donor),
-        )
-        .filter(BloodRequest.id == new_request.id)
-        .first()
-    )
-
-
-@router.patch("/{request_id}", response_model=BloodRequestResponse)
-def update_blood_request(
-    request_id: int,
-    updates: BloodRequestUpdate,
-    db: Session = Depends(get_db),
-):
-    request = db.query(BloodRequest).filter(
-        BloodRequest.id == request_id
-    ).first()
-
-    if request is None:
-        raise HTTPException(status_code=404, detail=f"Request {request_id} not found")
-
-    update_data = updates.model_dump(exclude_unset=True)
-
-    for field, value in update_data.items():
-        if hasattr(value, "value"):
-            value = value.value
-        setattr(request, field, value)
-
-    db.commit()
-    db.refresh(request)
-
-    return (
-        db.query(BloodRequest)
-        .options(
-            joinedload(BloodRequest.hospital),
-            joinedload(BloodRequest.donor),
-        )
-        .filter(BloodRequest.id == request_id)
-        .first()
-    )
-
-
-@router.patch("/{request_id}/assign-donor", response_model=BloodRequestResponse)
-def assign_donor_to_request(
-    request_id: int,
-    donor_id:   int = Query(..., description="ID of donor to assign"),
-    db:         Session = Depends(get_db),
-):
-    """
-    Assign a matching donor to an open blood request.
-    Validates:
-    - Request must be OPEN
-    - Donor must exist and be AVAILABLE
-    - Donor blood group must match request
-    """
-    blood_request = db.query(BloodRequest).filter(
-        BloodRequest.id == request_id
-    ).first()
-
-    if blood_request is None:
-        raise HTTPException(status_code=404, detail="Blood request not found")
-
-    if blood_request.status != StatusEnum.OPEN:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot assign donor — request is already {blood_request.status}",
-        )
-
-    donor = db.query(Donor).filter(
-        Donor.id == donor_id,
-        Donor.is_active == True,
-    ).first()
-
-    if donor is None:
-        raise HTTPException(status_code=404, detail="Donor not found")
-
-    # Blood group compatibility check
-    if donor.blood_group != blood_request.blood_group_needed:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Blood group mismatch — request needs "
-                f"{blood_request.blood_group_needed}, "
-                f"donor has {donor.blood_group}"
-            ),
-        )
-
-    # Assign donor and mark request fulfilled
-    blood_request.donor_id = donor_id
-    blood_request.status   = StatusEnum.FULFILLED
-
+    db.add(blood_request)
     db.commit()
     db.refresh(blood_request)
 
-    return (
+    invalidate_cache("blood_requests:*")
+
+    return build_request_response(blood_request)
+
+
+@router.get("/my-requests", response_model=BloodRequestListResponse)
+def hospital_my_requests(
+    current_hospital: Hospital = Depends(get_current_hospital),
+    db:               Session = Depends(get_db),
+):
+    """Hospital sees all their own requests regardless of status."""
+    requests = (
         db.query(BloodRequest)
-        .options(
-            joinedload(BloodRequest.hospital),
-            joinedload(BloodRequest.donor),
-        )
-        .filter(BloodRequest.id == request_id)
-        .first()
+        .filter(BloodRequest.hospital_id == current_hospital.id)
+        .order_by(BloodRequest.created_at.desc())
+        .all()
     )
+    return {"total": len(requests), "requests": [build_request_response(r) for r in requests]}
+
+
+@router.post("/{request_id}/cancel", response_model=BloodRequestResponse)
+def cancel_blood_request(
+    request_id:       int,
+    current_hospital: Hospital = Depends(get_current_hospital),
+    db:               Session = Depends(get_db),
+):
+    """
+    Hospital cancels their own request.
+    Cannot cancel already fulfilled requests.
+    """
+    blood_request = db.query(BloodRequest).filter(BloodRequest.id == request_id).first()
+    if not blood_request:
+        raise HTTPException(status_code=404, detail="Blood request not found.")
+
+    if blood_request.hospital_id != current_hospital.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only cancel your own requests.",
+        )
+
+    # State guard — prevent illogical transitions
+    if blood_request.status == RequestStatusEnum.FULFILLED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot cancel a request that has already been fulfilled.",
+        )
+    if blood_request.status == RequestStatusEnum.CANCELLED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Request is already cancelled.",
+        )
+
+    blood_request.status = RequestStatusEnum.CANCELLED
+    db.commit()
+    db.refresh(blood_request)
+
+    invalidate_cache("blood_requests:*")
+
+    return build_request_response(blood_request)
+
+
+# ── DONOR ─────────────────────────────────────────────────────────────────────
+
+@router.get("/matching", response_model=BloodRequestListResponse)
+def get_matching_requests(
+    current_user: User = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """
+    Donor sees open requests compatible with their blood group.
+    Uses compatibility map — O- donor sees all requests.
+    A+ donor sees only A+ and AB+ requests.
+    """
+    donor = db.query(Donor).filter(Donor.user_id == current_user.id).first()
+    if not donor:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only registered donors can view matching requests.",
+        )
+
+    # Get all blood groups this donor's blood is compatible with
+    donor_blood = donor.blood_group.value
+    compatible_recipient_groups = [
+        group
+        for group, compatible_donors in {
+            "A+":  ["A+", "A-", "O+", "O-"],
+            "A-":  ["A-", "O-"],
+            "B+":  ["B+", "B-", "O+", "O-"],
+            "B-":  ["B-", "O-"],
+            "AB+": ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"],
+            "AB-": ["AB-", "A-", "B-", "O-"],
+            "O+":  ["O+", "O-"],
+            "O-":  ["O-"],
+        }.items()
+        if donor_blood in compatible_donors
+    ]
+
+    requests = (
+        db.query(BloodRequest)
+        .filter(
+            BloodRequest.status == RequestStatusEnum.OPEN,
+            BloodRequest.blood_group.in_(compatible_recipient_groups),
+        )
+        .order_by(BloodRequest.created_at.desc())
+        .all()
+    )
+    return {"total": len(requests), "requests": [build_request_response(r) for r in requests]}
+
+
+@router.post("/{request_id}/accept", response_model=BloodRequestResponse)
+def accept_blood_request(
+    request_id:   int,
+    current_user: User = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """
+    Donor accepts an open request.
+    RBAC checks:
+    - Must be a registered donor
+    - Request must be OPEN
+    - Donor must be blood-compatible
+    """
+    donor = db.query(Donor).filter(Donor.user_id == current_user.id).first()
+    if not donor:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only registered donors can accept requests.",
+        )
+
+    blood_request = db.query(BloodRequest).filter(BloodRequest.id == request_id).first()
+    if not blood_request:
+        raise HTTPException(status_code=404, detail="Blood request not found.")
+
+    # State guard
+    if blood_request.status != RequestStatusEnum.OPEN:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This request is already {blood_request.status.value}.",
+        )
+
+    # Compatibility guard
+    compatible_donors = get_compatible_donor_groups(blood_request.blood_group.value)
+    if donor.blood_group.value not in compatible_donors:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Your blood group {donor.blood_group.value} is not compatible with this request ({blood_request.blood_group.value}).",
+        )
+
+    blood_request.donor_id = donor.id
+    blood_request.status   = RequestStatusEnum.ACCEPTED
+    db.commit()
+    db.refresh(blood_request)
+
+    invalidate_cache("blood_requests:*")
+
+    return build_request_response(blood_request)
+
+
+@router.post("/{request_id}/fulfil", response_model=BloodRequestResponse)
+def fulfil_blood_request(
+    request_id:   int,
+    current_user: User = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """
+    Only the assigned donor can mark as fulfilled.
+    Request must be in ACCEPTED state.
+    """
+    donor = db.query(Donor).filter(Donor.user_id == current_user.id).first()
+    if not donor:
+        raise HTTPException(status_code=403, detail="Only donors can fulfil requests.")
+
+    blood_request = db.query(BloodRequest).filter(BloodRequest.id == request_id).first()
+    if not blood_request:
+        raise HTTPException(status_code=404, detail="Blood request not found.")
+
+    if blood_request.donor_id != donor.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not the assigned donor for this request.",
+        )
+
+    # State guard
+    if blood_request.status != RequestStatusEnum.ACCEPTED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only accepted requests can be marked as fulfilled.",
+        )
+
+    blood_request.status = RequestStatusEnum.FULFILLED
+    db.commit()
+    db.refresh(blood_request)
+
+    invalidate_cache("blood_requests:*")
+
+    return build_request_response(blood_request)
+
+
+# ── ADMIN ─────────────────────────────────────────────────────────────────────
+
+@router.get("/admin/all", response_model=BloodRequestListResponse)
+def admin_list_all_requests(
+    status_filter: Optional[str] = Query(None),
+    admin:         User = Depends(require_admin),
+    db:            Session = Depends(get_db),
+):
+    """Admin sees all requests across all hospitals and statuses."""
+    query = db.query(BloodRequest)
+    if status_filter:
+        query = query.filter(BloodRequest.status == status_filter)
+
+    requests = query.order_by(BloodRequest.created_at.desc()).all()
+    return {"total": len(requests), "requests": [build_request_response(r) for r in requests]}
+
+
+@router.patch("/admin/{request_id}/cancel", response_model=BloodRequestResponse)
+def admin_cancel_request(
+    request_id: int,
+    admin:      User = Depends(require_admin),
+    db:         Session = Depends(get_db),
+):
+    """Admin can cancel any request except fulfilled ones."""
+    blood_request = db.query(BloodRequest).filter(BloodRequest.id == request_id).first()
+    if not blood_request:
+        raise HTTPException(status_code=404, detail="Blood request not found.")
+
+    if blood_request.status == RequestStatusEnum.FULFILLED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot cancel a fulfilled request.",
+        )
+    if blood_request.status == RequestStatusEnum.CANCELLED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Request is already cancelled.",
+        )
+
+    blood_request.status = RequestStatusEnum.CANCELLED
+    db.commit()
+    db.refresh(blood_request)
+    return build_request_response(blood_request)
+
+
+@router.get("/", response_model=PagedResponse[BloodRequestResponse])
+# @limiter.limit("30/minute")
+def list_blood_requests(
+    request:    Request,
+    pagination: PaginationParams = Depends(),
+    filters:    RequestFilterParams = Depends(),
+    db:         Session = Depends(get_db),
+):
+    cache_key = (
+        f"blood_requests:"
+        f"page={pagination.page}:"
+        f"size={pagination.page_size}:"
+        f"bg={filters.blood_group}:"
+        f"city={filters.city}:"
+        f"urgency={filters.urgency}:"
+        f"status={filters.status}:"
+        f"units_min={filters.units_needed_min}"
+    )
+
+    cached = get_cached(cache_key)
+    if cached:
+        return cached
+
+    query = db.query(BloodRequest)
+
+    if filters.blood_group:
+        query = query.filter(BloodRequest.blood_group == filters.blood_group)
+
+    if filters.city:
+        query = query.join(Hospital, BloodRequest.hospital_id == Hospital.id)\
+                     .filter(Hospital.city.ilike(f"%{filters.city}%"))
+
+    if filters.urgency:
+        query = query.filter(BloodRequest.urgency == filters.urgency)
+
+    if filters.status:
+        query = query.filter(BloodRequest.status == filters.status)
+
+    if filters.units_needed_min is not None:
+        query = query.filter(BloodRequest.units_needed >= filters.units_needed_min)
+
+    total = query.count()
+    blood_requests = query.offset(pagination.offset).limit(pagination.page_size).all()
+
+    result = PagedResponse.create(
+        items=[build_request_response(r) for r in blood_requests],
+        total=total,
+        params=pagination
+    )
+
+    # Shorter TTL — blood requests are more time-sensitive
+    set_cached(cache_key, result.model_dump(), ttl_seconds=30)
+
+    return result

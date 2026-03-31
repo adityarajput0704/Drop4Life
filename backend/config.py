@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     ENVIRONMENT:  str = "development"
 
     FIREBASE_SERVICE_ACCOUNT_PATH: str = "backend/firebase-service-account.json"
-
+    REDIS_URL: str = "redis://localhost:6379"
     # App
     app_name: str = "Drop4Life"
     debug: bool = False

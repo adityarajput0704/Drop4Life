@@ -1,131 +1,178 @@
-# app/routers/donors.py
-
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
-from typing import Optional
-
 from backend.dependencies.__init__ import get_db
-from backend.models.donor import Donor, BloodGroupEnum, AvailabilityEnum
-from backend.schemas.donor import (
-    DonorCreate, DonorUpdate, DonorResponse,
-    DonorListResponse, BloodGroup, AvailabilityStatus,
-)
+from backend.models.donor import Donor
+from backend.models.user import User
+from backend.models.blood_requests import BloodRequest
+from backend.schemas.donor import DonorCreate, DonorUpdate, DonorResponse, DonorListResponse, DonorFilterParams
+from backend.dependencies.auth import get_current_user
+from sqlalchemy import or_
+from backend.core.pagination import PaginationParams, PagedResponse
+from backend.core.rate_limiter import limiter
+from backend.core.cache import get_cached, set_cached, invalidate_cache
 
 router = APIRouter(prefix="/donors", tags=["Donors"])
 
 
-@router.get("/search", response_model=DonorListResponse)
-def search_donors(
-    blood_group:  BloodGroup                    = Query(...),
-    city:         Optional[str]                 = Query(None),
-    availability: Optional[AvailabilityStatus]  = Query(None),
-    db:           Session                       = Depends(get_db),  # ← injected session
+def build_donor_response(donor: Donor) -> dict:
+    """
+    Merges donor + user fields into a single flat dict.
+    DonorResponse expects full_name, email, phone from the User side.
+    """
+    return {
+        "id":           donor.id,
+        "blood_group":  donor.blood_group,
+        "city":         donor.city,
+        "age":          donor.age,
+        "availability": donor.availability,
+        "is_active":    donor.is_active,
+        "full_name":    donor.user.full_name,
+        "email":        donor.user.email,
+        "phone":        donor.user.phone,
+    }
+
+
+@router.post("/register", response_model=DonorResponse, status_code=status.HTTP_201_CREATED)
+# @limiter.limit("3/minute")
+def register_donor(
+    request:      Request,
+    donor_data: DonorCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """Search donors by blood group with optional filters."""
-
-    # Build query — SQLAlchemy doesn't hit DB until .all() or .first()
-    query = db.query(Donor).filter(
-        Donor.blood_group == blood_group.value,
-        Donor.is_active == True,
-    )
-
-    # Chain filters conditionally — only applied if parameter was sent
-    if city:
-        query = query.filter(Donor.city.ilike(f"%{city}%"))  # ilike = case-insensitive LIKE
-    if availability:
-        query = query.filter(Donor.availability == availability.value)
-
-    donors = query.all()  # ← SQL executes HERE, returns list of Donor model instances
-
-    return DonorListResponse(total_found=len(donors), donors=donors)
-
-
-@router.get("/{donor_id}", response_model=DonorResponse)
-def get_donor_by_id(donor_id: int, db: Session = Depends(get_db)):
-    """Get single donor by ID."""
-    donor = db.query(Donor).filter(
-        Donor.id == donor_id,
-        Donor.is_active == True,
-    ).first()  # .first() returns None if not found, never raises
-
-    if donor is None:
-        raise HTTPException(status_code=404, detail=f"Donor {donor_id} not found")
-
-    return donor  # Pydantic's from_attributes=True converts model → schema
-
-
-@router.post("/register", response_model=DonorResponse, status_code=201)
-def register_donor(donor_data: DonorCreate, db: Session = Depends(get_db)):
-    """Register a new donor."""
-
-    # Check uniqueness before inserting
-    existing = db.query(Donor).filter(
-        or_(
-            Donor.phone == donor_data.phone,
-            Donor.email == donor_data.email,
-        )
-    ).first()
-
+    # One user = one donor profile
+    existing = db.query(Donor).filter(Donor.user_id == current_user.id).first()
     if existing:
         raise HTTPException(
-            status_code=409,  # 409 Conflict — resource already exists
-            detail="A donor with this phone or email already exists",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have a donor profile.",
         )
 
-    # Create model instance — not saved yet
-    new_donor = Donor(
-        name=donor_data.name,
-        blood_group=donor_data.blood_group.value,
-        city=donor_data.city,
-        age=donor_data.age,
-        phone=donor_data.phone,
-        availability=donor_data.availability.value,
+    donor = Donor(
+        user_id      = current_user.id,
+        blood_group  = donor_data.blood_group,
+        city         = donor_data.city,
+        age          = donor_data.age,
+        availability = donor_data.availability,
     )
 
-    db.add(new_donor)      # stage the insert
-    db.commit()            # write to PostgreSQL
-    db.refresh(new_donor)  # reload from DB — gets generated id, created_at
-
-    return new_donor
-
-
-@router.patch("/{donor_id}", response_model=DonorResponse)
-def update_donor(donor_id: int, updates: DonorUpdate, db: Session = Depends(get_db)):
-    """Partially update donor profile."""
-    donor = db.query(Donor).filter(Donor.id == donor_id).first()
-
-    if donor is None:
-        raise HTTPException(status_code=404, detail=f"Donor {donor_id} not found")
-
-    # exclude_unset=True → only fields the client actually sent
-    update_data = updates.model_dump(exclude_unset=True)
-
-    for field, value in update_data.items():
-        # Handle enum values — store the .value string, not the enum object
-        if hasattr(value, "value"):
-            value = value.value
-        setattr(donor, field, value)  # dynamically update each field
-
+    db.add(donor)
     db.commit()
     db.refresh(donor)
 
-    return donor
+    # New donor registered — clear all donor list caches
+    invalidate_cache("donors:*")
+
+    return build_donor_response(donor)
 
 
-@router.delete("/{donor_id}", status_code=204)
-def delete_donor(donor_id: int, db: Session = Depends(get_db)):
-    """
-    Soft delete — sets is_active=False, never removes from DB.
-    WHY soft delete: you need audit trails, data recovery, and referential integrity.
-    Hard delete breaks foreign keys and loses history.
-    """
-    donor = db.query(Donor).filter(Donor.id == donor_id).first()
+@router.get("/me", response_model=DonorResponse)
+def get_my_donor_profile(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    donor = db.query(Donor).filter(Donor.user_id == current_user.id).first()
+    if not donor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No donor profile found. Please register as a donor first.",
+        )
+    return build_donor_response(donor)
 
-    if donor is None:
-        raise HTTPException(status_code=404, detail=f"Donor {donor_id} not found")
 
-    donor.is_active = False
+@router.get("/", response_model=DonorListResponse)
+def list_donors(
+    db: Session = Depends(get_db),
+):
+    """Public — no auth required."""
+    donors = db.query(Donor).filter(Donor.is_active == True).all()
+    return {
+        "total": len(donors),
+        "donors": [build_donor_response(d) for d in donors]
+    }
+
+
+@router.patch("/me", response_model=DonorResponse)
+def update_donor_profile(
+    updates: DonorUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    donor = db.query(Donor).filter(Donor.user_id == current_user.id).first()
+    if not donor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No donor profile found.",
+        )
+
+    for field, value in updates.model_dump(exclude_unset=True).items():
+        setattr(donor, field, value)
+
     db.commit()
+    db.refresh(donor)
+    
+    invalidate_cache("donors:*")
 
-    # 204 No Content — success, nothing to return
+    return build_donor_response(donor)
+
+
+@router.get("/", response_model=PagedResponse[DonorResponse])
+# @limiter.limit("30/minute")
+def list_donors(
+    request:    Request,
+    pagination: PaginationParams = Depends(),
+    filters:    DonorFilterParams = Depends(),
+    db:         Session = Depends(get_db),
+):
+    """Public — paginated donor list with optional filters."""
+
+    # Build a unique cache key from all query params
+    cache_key = (
+        f"donors:"
+        f"page={pagination.page}:"
+        f"size={pagination.page_size}:"
+        f"bg={filters.blood_group}:"
+        f"city={filters.city}:"
+        f"avail={filters.is_available}:"
+        f"search={filters.search}"
+    )
+
+    # Try cache first
+    cached = get_cached(cache_key)
+    if cached:
+        return cached
+
+    # Cache miss — query DB
+    query = db.query(Donor).filter(Donor.is_active == True)
+
+    if filters.blood_group:
+        query = query.filter(Donor.blood_group == filters.blood_group)
+
+    if filters.city:
+        query = query.filter(Donor.city.ilike(f"%{filters.city}%"))
+
+    if filters.is_available is not None:
+        query = query.filter(Donor.availability == filters.is_available)
+
+    if filters.search:
+        search_term = f"%{filters.search}%"
+        query = query.join(User, Donor.user_id == User.id).filter(
+            or_(
+                User.full_name.ilike(search_term),
+                User.phone.ilike(search_term),
+            )
+        )
+
+    total = query.count()
+    donors = query.offset(pagination.offset).limit(pagination.page_size).all()
+
+    result = PagedResponse.create(
+        items=[build_donor_response(d) for d in donors],
+        total=total,
+        params=pagination
+    )
+
+    # Store in cache for 60 seconds
+    set_cached(cache_key, result.model_dump(), ttl_seconds=60)
+
+    return result

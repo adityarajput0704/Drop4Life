@@ -1,82 +1,78 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from enum import Enum
+from fastapi import Query
 
 class BloodGroup(str, Enum):
-    A_POS = "A+"
-    A_NEG = "A-"
-    B_POS = "B+"
-    B_NEG = "B-"
+    A_POS  = "A+"
+    A_NEG  = "A-"
+    B_POS  = "B+"
+    B_NEG  = "B-"
     AB_POS = "AB+"
     AB_NEG = "AB-"
-    O_POS = "O+"
-    O_NEG = "O-"
+    O_POS  = "O+"
+    O_NEG  = "O-"
+
 
 class AvailabilityStatus(str, Enum):
-    AVAILABLE = "available"
+    AVAILABLE   = "available"
     UNAVAILABLE = "unavailable"
-    Busy= "busy"
+    BUSY        = "busy"
 
-# -----REQUEST SCHEMAS----- what clients sends to us
+
 class DonorCreate(BaseModel):
-    name: str = Field(..., min_length=2, max_length=200, example="John Doe")
-    age: int = Field(..., ge=18, le=65, example=30)
-    blood_group: BloodGroup = Field(..., example="A+")
-    city: str = Field(..., example="Mumbai")
-    availability_status: AvailabilityStatus = Field(..., example="available")
-    phone: str = Field(..., min_length=10, max_length=10, example=9876543210)
+    """Only donor-specific fields — no name/email/phone"""
+    blood_group:  BloodGroup
+    city:         str = Field(..., example="Mumbai")
+    age:          int = Field(..., ge=18, le=65)
+    availability: AvailabilityStatus = Field(default=AvailabilityStatus.AVAILABLE)
 
-    @field_validator("phone")
-    @classmethod
-    def validate_phone(cls, value:str)-> str:
-        if not value.isdigit():
-            raise ValueError("Phone number must contain only digits")
-        if len(value) != 10:
-            raise ValueError("Phone number must be exactly 10 digits long")
-        return value
-    
-    @field_validator("name")
-    @classmethod
-    def validate_name(cls, value:str)-> str:
-        if not all(x.isalpha() or x.isspace() for x in value):
-            raise ValueError("Name must contain only letters and spaces")
-        return value.strip().title()
-    
+
 class DonorUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=2, max_length=200, example="John Doe")
-    age: Optional[int] = Field(None, ge=18, le=65, example=30)
-    city: Optional[str] = Field(None, example="Mumbai")
-    availability_status: Optional[AvailabilityStatus] = Field(None, example="available")
-    phone: Optional[str] = Field(None, min_length=10, max_length=10, example=9876543210)
+    city:         Optional[str] = None
+    age:          Optional[int] = Field(None, ge=18, le=65)
+    availability: Optional[AvailabilityStatus] = None
 
-    @field_validator("phone")
-    @classmethod
-    def validate_phone(cls, value:str)-> str:
-        if not value.isdigit():
-            raise ValueError("Phone number must contain only digits")
-        if len(value) != 10:
-            raise ValueError("Phone number must be exactly 10 digits long")
-        return value
-    
-    @field_validator("name")
-    @classmethod
-    def validate_name(cls, value:str)-> str:
-        if not all(x.isalpha() or x.isspace() for x in value):
-            raise ValueError("Name must contain only letters and spaces")
-        return value.strip().title()
-    
-# -----RESPONSE SCHEMAS----- what we send back to clients
+
 class DonorResponse(BaseModel):
-    id: int
-    name: str
-    age: int
-    blood_group: BloodGroup
-    city: str
-    availability_status: AvailabilityStatus
-    phone: str
+    """
+    Combines donor fields + user identity fields for a complete response.
+    The frontend gets everything it needs in one object.
+    """
+    id:           int
+    blood_group:  BloodGroup
+    city:         str
+    age:          int
+    availability: AvailabilityStatus
+    is_active:    bool
 
-    model_config = {"from_attributes": True}  
+    # These come from the joined User record
+    full_name:    str
+    email:        str
+    phone:        Optional[str]
+
+    model_config = {"from_attributes": True}
+
 
 class DonorListResponse(BaseModel):
-    total: int
+    total:  int
     donors: list[DonorResponse]
+
+
+
+class DonorFilterParams:
+    """
+    Query parameter filters for donor listing.
+    Each field is optional — only applied if provided.
+    """
+    def __init__(
+        self,
+        blood_group: Optional[str] = Query(default=None, description="Filter by blood group e.g. A+"),
+        city: Optional[str] = Query(default=None, description="Filter by city"),
+        is_available: Optional[bool] = Query(default=None, description="Filter by availability"),
+        search: Optional[str] = Query(default=None, description="Search by name or phone"),
+    ):
+        self.blood_group = blood_group
+        self.city = city
+        self.is_available = is_available
+        self.search = search

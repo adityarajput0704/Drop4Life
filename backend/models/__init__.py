@@ -4,6 +4,7 @@
 from backend.models.donor import Donor
 from backend.models.hospitals import Hospital
 from backend.models.blood_requests import BloodRequest
+from backend.models.user import User
 
 
 

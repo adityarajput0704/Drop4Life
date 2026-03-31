@@ -3,6 +3,11 @@ from backend.database import Base, engine
 from typing import Optional 
 from backend.routers import donors, blood_requests, hospitals, users
 from backend.firebase import initialize_firebase
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from backend.core.rate_limiter import limiter
+
 
 initialize_firebase()
 
@@ -11,6 +16,15 @@ app = FastAPI(
     description="API for connecting blood donors with those in need",
     version="1.0.0",
 )
+
+# Attach limiter to app state
+app.state.limiter = limiter
+
+# Add middleware
+app.add_middleware(SlowAPIMiddleware)
+
+# Add error handler — returns 429 when limit is exceeded
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 Base.metadata.create_all(bind=engine)

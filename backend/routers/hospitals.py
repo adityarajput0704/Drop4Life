@@ -1,134 +1,144 @@
-# app/routers/hospitals.py
-
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import Optional
-
 from backend.dependencies.__init__ import get_db
 from backend.models.hospitals import Hospital
-from backend.schemas.hospital import (
-    HospitalCreate,
-    HospitalUpdate,
-    HospitalResponse,
-    HospitalListResponse,
-)
+from backend.models.user import User
+from backend.schemas.hospital import HospitalCreate, HospitalResponse, HospitalUpdate
+from backend.dependencies.auth import verify_firebase_token, get_current_hospital, require_admin
 
 router = APIRouter(prefix="/hospitals", tags=["Hospitals"])
 
 
-@router.get("", response_model=HospitalListResponse)
-def get_hospitals(
-    city:     Optional[str]  = Query(None, description="Filter by city"),
-    verified: Optional[bool] = Query(None, description="Filter by verification status"),
-    db:       Session        = Depends(get_db),
-):
-    query = db.query(Hospital).filter(Hospital.is_active == True)
-
-    filters_applied = {}
-
-    if city is not None:
-        query = query.filter(Hospital.city.ilike(f"%{city}%"))
-        filters_applied["city"] = city
-
-    if verified is not None:
-        query = query.filter(Hospital.verified == verified)
-        filters_applied["verified"] = verified
-
-    hospitals = query.all()
-
-    return HospitalListResponse(
-        total=len(hospitals),
-        filters_applied=filters_applied,
-        hospitals=hospitals,
-    )
-
-
-@router.get("/{hospital_id}", response_model=HospitalResponse)
-def get_hospital_by_id(hospital_id: int, db: Session = Depends(get_db)):
-    hospital = db.query(Hospital).filter(
-        Hospital.id == hospital_id,
-        Hospital.is_active == True,
-    ).first()
-
-    if hospital is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Hospital with id {hospital_id} not found",
-        )
-
-    return hospital
-
-
-@router.post("/register", response_model=HospitalResponse, status_code=201)
-def register_hospital(hospital_data: HospitalCreate, db: Session = Depends(get_db)):
-    # Check duplicate email — hospitals must have unique emails
-    if hospital_data.email:
-        existing = db.query(Hospital).filter(
-            Hospital.email == hospital_data.email
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=409,
-                detail="A hospital with this email already exists",
-            )
-
-    new_hospital = Hospital(
-        name=hospital_data.name,
-        address=hospital_data.address,
-        city=hospital_data.city,
-        phone=hospital_data.phone,
-        email=hospital_data.email,
-        verified=hospital_data.verified,
-        blood_inventory=hospital_data.blood_inventory or {},
-    )
-
-    db.add(new_hospital)
-    db.commit()
-    db.refresh(new_hospital)
-
-    return new_hospital
-
-
-@router.patch("/{hospital_id}", response_model=HospitalResponse)
-def update_hospital(
-    hospital_id: int,
-    updates: HospitalUpdate,
+@router.post("/register", response_model=HospitalResponse, status_code=status.HTTP_201_CREATED)
+def register_hospital(
+    data: HospitalCreate,
+    decoded_token: dict = Depends(verify_firebase_token),
     db: Session = Depends(get_db),
 ):
-    hospital = db.query(Hospital).filter(
-        Hospital.id == hospital_id,
-        Hospital.is_active == True,
-    ).first()
+    """
+    Hospital registers using their Firebase token.
+    Auto-approved on registration.
+    Admin can revoke later.
+    """
+    firebase_uid = decoded_token.get("uid")
+    firebase_email = decoded_token.get("email")
 
-    if hospital is None:
+    # Prevent duplicate registration
+    existing = db.query(Hospital).filter(
+        Hospital.firebase_uid == firebase_uid
+    ).first()
+    if existing:
         raise HTTPException(
-            status_code=404,
-            detail=f"Hospital with id {hospital_id} not found",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Hospital already registered.",
         )
 
-    update_data = updates.model_dump(exclude_unset=True)
+    # Prevent duplicate registration number
+    reg_taken = db.query(Hospital).filter(
+        Hospital.registration_no == data.registration_no
+    ).first()
+    if reg_taken:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This registration number is already in use.",
+        )
 
-    for field, value in update_data.items():
-        setattr(hospital, field, value)
+    hospital = Hospital(
+        firebase_uid    = firebase_uid,
+        email           = firebase_email,
+        name            = data.name,
+        phone           = data.phone,
+        address         = data.address,
+        city            = data.city,
+        registration_no = data.registration_no,
+        is_verified     = True,   # auto-approved
+    )
 
+    db.add(hospital)
     db.commit()
     db.refresh(hospital)
-
     return hospital
 
 
-@router.delete("/{hospital_id}", status_code=204)
-def delete_hospital(hospital_id: int, db: Session = Depends(get_db)):
-    hospital = db.query(Hospital).filter(
-        Hospital.id == hospital_id,
-        Hospital.is_active == True,
-    ).first()
+@router.get("/me", response_model=HospitalResponse)
+def get_my_hospital_profile(
+    current_hospital: Hospital = Depends(get_current_hospital),
+):
+    """Get the authenticated hospital's profile."""
+    return current_hospital
 
-    if hospital is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Hospital with id {hospital_id} not found",
-        )
+@router.patch("/me", response_model=HospitalResponse)
+def update_my_hospital_profile(
+    updates:          HospitalUpdate,
+    current_hospital: Hospital = Depends(get_current_hospital),
+    db:               Session = Depends(get_db),
+):
+    """
+    Hospital updates their own profile.
+    Registration number cannot be changed — excluded from schema.
+    Verification status cannot be changed — only admin controls that.
+    """
+    for field, value in updates.model_dump(exclude_unset=True).items():
+        setattr(current_hospital, field, value)
 
-    hospital.is_active = False
     db.commit()
+    db.refresh(current_hospital)
+    return current_hospital
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+def deactivate_my_hospital(
+    current_hospital: Hospital = Depends(get_current_hospital),
+    db:               Session = Depends(get_db),
+):
+    """
+    Hospital deactivates their own account.
+    We soft delete — set is_active=False, never hard delete.
+    All their existing blood requests remain in the system for audit trail.
+    """
+    current_hospital.is_active = False
+    db.commit()
+
+# ── ADMIN ONLY ────────────────────────────────────────────────────────────────
+
+@router.get("/", response_model=list[HospitalResponse])
+def list_hospitals(
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Admin only — list all hospitals."""
+    return db.query(Hospital).all()
+
+
+@router.patch("/{hospital_id}/revoke", response_model=HospitalResponse)
+def revoke_hospital(
+    hospital_id: int,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Admin only — revoke a hospital's verified status."""
+    hospital = db.query(Hospital).filter(Hospital.id == hospital_id).first()
+    if not hospital:
+        raise HTTPException(status_code=404, detail="Hospital not found.")
+
+    hospital.is_verified = False
+    db.commit()
+    db.refresh(hospital)
+    return hospital
+
+
+@router.patch("/{hospital_id}/verify", response_model=HospitalResponse)
+def verify_hospital(
+    hospital_id: int,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Admin only — re-verify a previously revoked hospital."""
+    hospital = db.query(Hospital).filter(Hospital.id == hospital_id).first()
+    if not hospital:
+        raise HTTPException(status_code=404, detail="Hospital not found.")
+
+    hospital.is_verified = True
+    db.commit()
+    db.refresh(hospital)
+    return hospital
