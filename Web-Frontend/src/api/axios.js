@@ -3,7 +3,7 @@ import { firebaseAuth } from './auth'
 
 function getApiBaseUrl() {
   const url = import.meta.env.VITE_API_URL
-  return url || 'http://localhost:5174'
+  return url || 'http://localhost:8000'
 }
 
 export const api = axios.create({
