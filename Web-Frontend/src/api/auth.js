@@ -5,6 +5,7 @@ import {
   signOut,
   onAuthStateChanged as firebaseOnAuthStateChanged,
 } from 'firebase/auth'
+import { USE_MOCK } from '../config.js'
 
 // console.log("Firebase configured:", isFirebaseConfigured)
 
@@ -38,6 +39,8 @@ function ensureFirebaseAuth() {
 export { firebaseAuth }
 
 export async function login(email, password) {
+  if (USE_MOCK) return { email, uid: 'mock-user' }
+
   const auth = ensureFirebaseAuth()
   if (!auth) {
     const err = new Error('Firebase is not configured. Add env vars to enable login.')
@@ -50,12 +53,19 @@ export async function login(email, password) {
 }
 
 export async function logout() {
+  if (USE_MOCK) return
+
   const auth = ensureFirebaseAuth()
   if (!auth) return
   await signOut(auth)
 }
 
 export function onAuthStateChanged(callback) {
+  if (USE_MOCK) {
+    callback(null)
+    return () => {}
+  }
+
   const auth = ensureFirebaseAuth()
   if (!auth) {
     callback(null)

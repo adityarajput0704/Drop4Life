@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { USE_MOCK } from '../config.js'
 
 function BloodLinkLogo() {
   return (
@@ -62,6 +63,12 @@ export default function Login() {
     setLocalError(null)
     if (!canSubmit) {
       setLocalError('Please enter your email and password.')
+      return
+    }
+
+    if (USE_MOCK) {
+      if (mode === 'hospital') navigate('/hospital/dashboard', { replace: true })
+      if (mode === 'admin') navigate('/admin/dashboard', { replace: true })
       return
     }
 

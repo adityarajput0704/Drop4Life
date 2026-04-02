@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { USE_MOCK } from '../config.js'
 import LoadingSpinner from '../components/LoadingSpinner.jsx'
 import ToastHost from '../components/ToastHost.jsx'
 
@@ -19,6 +20,8 @@ function AuthGate({ children }) {
   const { user, loading } = useAuth()
   const location = useLocation()
 
+  if (USE_MOCK) return children
+
   if (loading) return <LoadingSpinner />
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />
   return children
@@ -26,6 +29,8 @@ function AuthGate({ children }) {
 
 function RoleGate({ allow, children, fallbackTo }) {
   const { role, loading } = useAuth()
+  if (USE_MOCK) return children
+
   if (loading) return <LoadingSpinner />
   if (!allow.includes(role)) return <Navigate to={fallbackTo} replace />
   return children
@@ -33,6 +38,8 @@ function RoleGate({ allow, children, fallbackTo }) {
 
 function RoleHomeRedirect() {
   const { role, loading } = useAuth()
+  if (USE_MOCK) return <Navigate to="/login" replace />
+
   if (loading) return <LoadingSpinner />
   if (role === 'admin') return <Navigate to="/admin/dashboard" replace />
   if (role === 'hospital') return <Navigate to="/hospital/dashboard" replace />
