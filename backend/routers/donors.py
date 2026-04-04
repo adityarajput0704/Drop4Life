@@ -80,17 +80,6 @@ def get_my_donor_profile(
     return build_donor_response(donor)
 
 
-@router.get("/", response_model=DonorListResponse)
-def list_donors(
-    db: Session = Depends(get_db),
-):
-    """Public — no auth required."""
-    donors = db.query(Donor).filter(Donor.is_active == True).all()
-    return {
-        "total": len(donors),
-        "donors": [build_donor_response(d) for d in donors]
-    }
-
 
 @router.patch("/me", response_model=DonorResponse)
 def update_donor_profile(

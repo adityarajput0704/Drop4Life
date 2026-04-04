@@ -29,5 +29,9 @@ class UserResponse(BaseModel):
     is_active: bool
     created_at: datetime
 
+    city:         Optional[str] = None
+    is_verified:  Optional[bool] = None
+    hospital_name: Optional[str] = None
+
     class Config:
         from_attributes = True

@@ -18,7 +18,11 @@ from sqlalchemy import or_
 from backend.core.pagination import PaginationParams, PagedResponse
 from backend.core.rate_limiter import limiter
 from backend.core.cache import get_cached, set_cached, invalidate_cache
-from backend.services.notification_services import log_request_created, log_donation_event
+from backend.services.notification_services import (
+    notify_request_created,
+    notify_request_accepted,
+    notify_donation_fulfilled,
+)
 
 
 router = APIRouter(prefix="/blood-requests", tags=["Blood Requests"])
@@ -69,28 +73,50 @@ def create_blood_request(
 
     # Add background task — runs after response is sent
     background_tasks.add_task(
-        log_request_created,
-        request_id    = blood_request.id,
-        hospital_name = current_hospital.name,
-        blood_group   = data.blood_group.value,
-    )
+    notify_request_created,
+    request_id=blood_request.id,
+    hospital_name=current_hospital.name,
+    blood_group=blood_request.blood_group.value,
+    urgency=blood_request.urgency.value,
+    db=db,
+)
 
     return build_request_response(blood_request)
 
 
 @router.get("/my-requests", response_model=BloodRequestListResponse)
+@router.get("/my-requests", response_model=PagedResponse[BloodRequestResponse])
 def hospital_my_requests(
-    current_hospital: Hospital = Depends(get_current_hospital),
-    db:               Session = Depends(get_db),
+    pagination:       PaginationParams = Depends(),
+    status:           Optional[str]    = Query(None),
+    blood_group:      Optional[str]    = Query(None),
+    current_hospital: Hospital         = Depends(get_current_hospital),
+    db:               Session          = Depends(get_db),
 ):
-    """Hospital sees all their own requests regardless of status."""
-    requests = (
-        db.query(BloodRequest)
-        .filter(BloodRequest.hospital_id == current_hospital.id)
+    """Hospital sees their own requests with pagination and filtering."""
+    query = db.query(BloodRequest).filter(
+        BloodRequest.hospital_id == current_hospital.id
+    )
+
+    if status:
+        query = query.filter(BloodRequest.status == status.lower())
+    if blood_group:
+        query = query.filter(BloodRequest.blood_group == blood_group)
+
+    total = query.count()
+    items = (
+        query
         .order_by(BloodRequest.created_at.desc())
+        .offset(pagination.offset)
+        .limit(pagination.page_size)
         .all()
     )
-    return {"total": len(requests), "requests": [build_request_response(r) for r in requests]}
+
+    return PagedResponse.create(
+        items=[build_request_response(r) for r in items],
+        total=total,
+        params=pagination,
+    )
 
 
 @router.post("/{request_id}/cancel", response_model=BloodRequestResponse)
@@ -179,12 +205,13 @@ def get_matching_requests(
         .order_by(BloodRequest.created_at.desc())
         .all()
     )
-    return {"total": len(requests), "requests": [build_request_response(r) for r in requests]}
+    return {"total": len(requests), "items": [build_request_response(r) for r in requests]}
 
 
 @router.post("/{request_id}/accept", response_model=BloodRequestResponse)
 def accept_blood_request(
     request_id:   int,
+    background_tasks: BackgroundTasks,              
     current_user: User = Depends(get_current_user),
     db:           Session = Depends(get_db),
 ):
@@ -228,6 +255,14 @@ def accept_blood_request(
 
     invalidate_cache("blood_requests:*")
 
+    background_tasks.add_task(
+    notify_request_accepted,
+    request_id=blood_request.id,
+    hospital_id=blood_request.hospital_id,
+    donor_name=current_user.full_name,
+    blood_group=blood_request.blood_group.value,
+)
+    
     return build_request_response(blood_request)
 
 
@@ -266,12 +301,12 @@ def fulfil_blood_request(
 
     # Add background task — runs after response is sent
     background_tasks.add_task(
-        log_donation_event,
-        request_id = blood_request.id,
-        donor_id   = donor.id,
-        db         = db,
-    )
-
+    notify_donation_fulfilled,
+    request_id=blood_request.id,
+    donor_id=donor.id,
+    hospital_id=blood_request.hospital_id,
+    db=db,
+)
     return build_request_response(blood_request)
 
 
@@ -279,17 +314,39 @@ def fulfil_blood_request(
 
 @router.get("/admin/all", response_model=BloodRequestListResponse)
 def admin_list_all_requests(
-    status_filter: Optional[str] = Query(None),
-    admin:         User = Depends(require_admin),
-    db:            Session = Depends(get_db),
+    pagination: PaginationParams = Depends(),
+    status:      Optional[str] = Query(None),
+    blood_group: Optional[str] = Query(None),
+    city:        Optional[str] = Query(None),
+    admin:       User          = Depends(require_admin),
+    db:          Session       = Depends(get_db),
 ):
-    """Admin sees all requests across all hospitals and statuses."""
-    query = db.query(BloodRequest)
-    if status_filter:
-        query = query.filter(BloodRequest.status == status_filter)
+    """Admin sees all requests across all hospitals with pagination and filtering."""
+    query = db.query(BloodRequest).join(BloodRequest.hospital)
 
-    requests = query.order_by(BloodRequest.created_at.desc()).all()
-    return {"total": len(requests), "requests": [build_request_response(r) for r in requests]}
+    if status:
+        query = query.filter(BloodRequest.status == status.lower())
+    if blood_group:
+        query = query.filter(BloodRequest.blood_group == blood_group)
+    if city:
+        from backend.models.hospitals import Hospital
+        query = query.filter(Hospital.city.ilike(f"%{city}%"))
+
+    total = query.count()
+
+    items = (
+        query
+        .order_by(BloodRequest.created_at.desc())
+        .offset(pagination.offset)
+        .limit(pagination.page_size)
+        .all()
+    )
+
+    return PagedResponse.create(
+        items=[build_request_response(r) for r in items],
+        total=total,
+        params=pagination,                       # ← handles all pagination fields
+    )
 
 
 @router.patch("/admin/{request_id}/cancel", response_model=BloodRequestResponse)

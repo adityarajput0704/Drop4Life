@@ -62,7 +62,7 @@ class BloodRequestResponse(BaseModel):
 
 class BloodRequestListResponse(BaseModel):
     total:    int
-    requests: list[BloodRequestResponse]
+    items: list[BloodRequestResponse]
 
 class RequestFilterParams:
     """

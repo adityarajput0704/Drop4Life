@@ -147,7 +147,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             Switch(
                               value: donor?.availability ?? false,
                               onChanged: (val) {},
-                              activeColor: AppColors.primaryRed,
+                              activeThumbColor: AppColors.primaryRed,
                             ),
                           ],
                         ),

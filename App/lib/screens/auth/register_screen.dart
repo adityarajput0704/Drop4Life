@@ -118,7 +118,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const Text("BLOOD GROUP", style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: _selectedBloodGroup,
+                  initialValue: _selectedBloodGroup,
                   decoration: InputDecoration(
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),

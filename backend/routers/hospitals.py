@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from backend.core.pagination import PaginationParams, PagedResponse
+from typing import Optional
 from sqlalchemy.orm import Session
 from backend.dependencies.__init__ import get_db
 from backend.models.hospitals import Hospital
@@ -101,13 +103,37 @@ def deactivate_my_hospital(
 
 # ── ADMIN ONLY ────────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=list[HospitalResponse])
+@router.get("/", response_model=dict)
+@router.get("/", response_model=PagedResponse[HospitalResponse])
 def list_hospitals(
-    admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
+    pagination: PaginationParams = Depends(),
+    search:     Optional[str]    = Query(None),
+    admin:      User             = Depends(require_admin),
+    db:         Session          = Depends(get_db),
 ):
-    """Admin only — list all hospitals."""
-    return db.query(Hospital).all()
+    """Admin only — list all hospitals with pagination and search."""
+    query = db.query(Hospital)
+
+    if search:
+        query = query.filter(
+            Hospital.name.ilike(f"%{search}%") |
+            Hospital.city.ilike(f"%{search}%")
+        )
+
+    total = query.count()
+    items = (
+        query
+        .order_by(Hospital.created_at.desc())
+        .offset(pagination.offset)
+        .limit(pagination.page_size)
+        .all()
+    )
+
+    return PagedResponse.create(
+        items=[HospitalResponse.model_validate(h) for h in items],
+        total=total,
+        params=pagination,
+    )
 
 
 @router.patch("/{hospital_id}/revoke", response_model=HospitalResponse)

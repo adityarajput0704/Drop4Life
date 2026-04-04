@@ -23,7 +23,8 @@ class HospitalResponse(BaseModel):
     is_active:       bool
     created_at:      datetime
 
-    model_config = {"from_attributes": True}
+    class Config:
+        from_attributes = True
 
 class HospitalUpdate(BaseModel):
     name:    Optional[str] = Field(None, min_length=3, max_length=200)
@@ -31,3 +32,4 @@ class HospitalUpdate(BaseModel):
     address: Optional[str] = Field(None, min_length=5, max_length=300)
     city:    Optional[str] = Field(None, min_length=2, max_length=100)
     # registration_no is intentionally excluded — cannot be changed after registration
+

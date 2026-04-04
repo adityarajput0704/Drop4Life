@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from backend.database import Base, engine
 from typing import Optional 
 from backend.routers import donors, blood_requests, hospitals, users
@@ -7,6 +8,8 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from backend.core.rate_limiter import limiter
+from fastapi import WebSocket, WebSocketDisconnect
+from backend.core.websocket_manager import manager
 import logging
 
 
@@ -22,6 +25,18 @@ app = FastAPI(
     title="Drop4Life",
     description="API for connecting blood donors with those in need",
     version="1.0.0",
+    # redirect_slashes=False,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:4173",   # vite preview
+    ],
+    allow_credentials=True,        # required — frontend sends Authorization header
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Attach limiter to app state
@@ -39,7 +54,7 @@ Base.metadata.create_all(bind=engine)
 app.include_router(donors.router)
 app.include_router(blood_requests.router)
 app.include_router(hospitals.router) 
-app.include_router(users.router)       
+app.include_router(users.router) 
 
 @app.get("/")
 def read_root():
@@ -48,6 +63,26 @@ def read_root():
         "message": "Welcome to Drop4Life!",
         "version": "1.0.0",
     }
+
+
+@app.websocket("/ws/{room}")
+async def websocket_endpoint(websocket: WebSocket, room: str):
+    """
+    WebSocket endpoint. Clients connect to a room.
+    
+    Rooms:
+      /ws/admin           → admin dashboard
+      /ws/hospital_3      → hospital with id=3
+    """
+    await manager.connect(websocket, room)
+    try:
+        while True:
+            # Keep connection alive — wait for client messages
+            # We don't process client messages yet, just keep alive
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, room)
+
 
 
 # # ─────────────────────────────────────────

@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../providers/donor_provider.dart';
 import '../../providers/request_provider.dart';
-import '../../widgets/blood_badge.dart';
 import '../../widgets/request_card.dart';
 import '../../widgets/loading_spinner.dart';
 import '../../widgets/bottom_nav.dart';
@@ -114,7 +113,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               Switch(
                                 value: donor?.availability ?? false,
                                 onChanged: (val) {},
-                                activeColor: AppColors.primaryRed,
+                                activeThumbColor: AppColors.primaryRed,
                               ),
                             ],
                           ),

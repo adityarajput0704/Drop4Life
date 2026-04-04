@@ -7,6 +7,7 @@ from backend.dependencies.auth import (
     require_admin,
 )
 from backend.models.user import User
+from backend.models.hospitals import Hospital
 from backend.schemas.user import UserCreate, UserUpdate, UserResponse
 import uuid
 
@@ -53,11 +54,45 @@ def register_user(
 
 @router.get("/me", response_model=UserResponse)
 def get_my_profile(
-    current_user: User = Depends(get_current_user),  # fully protected
+    decoded_token: dict = Depends(verify_firebase_token),  # ← changed dependency
+    db: Session = Depends(get_db),                         # ← added db
 ):
-    """Get the authenticated user's own profile."""
-    return current_user
+    """
+    Unified identity endpoint — checks users table first, then hospitals.
+    Frontend always calls this after login to get role + profile.
+    Returns a consistent UserResponse shape regardless of account type.
+    """
+    uid = decoded_token.get("uid")
 
+    # 1. Check users table (admin, donor roles)
+    user = db.query(User).filter(User.firebase_uid == uid).first()
+    if user:
+        return user
+
+    # 2. Check hospitals table — map to UserResponse shape
+    hospital = db.query(Hospital).filter(Hospital.firebase_uid == uid).first()
+    if hospital:
+        return UserResponse(
+            id=str(hospital.id),
+            firebase_uid=hospital.firebase_uid,
+            email=hospital.email,
+            full_name=hospital.name,       # hospitals use `name` not `full_name`
+            phone=hospital.phone,
+            blood_group=None,              # hospitals don't have blood group
+            role="hospital",              # hardcoded — hospitals table = hospital role
+            is_active=hospital.is_active,
+            created_at=hospital.created_at,
+
+            city=hospital.city,
+            is_verified=hospital.is_verified,
+            hospital_name=hospital.name,
+        )
+
+    # 3. Firebase token valid but no DB record — not registered yet
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="User not registered. Please complete registration.",
+    )
 
 @router.patch("/me", response_model=UserResponse)
 def update_my_profile(

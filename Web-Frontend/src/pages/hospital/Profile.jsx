@@ -29,12 +29,12 @@ export default function Profile() {
           <div className="mt-1 text-sm font-semibold text-[#6B7280]">Account and facility details.</div>
 
           <div className="mt-6">
-            <Row label="Hospital Name" value={profile?.hospital_name || profile?.name} />
+            <Row label="Hospital Name" value={profile?.full_name} />
             <Row label="Email" value={profile?.email} />
             <Row label="City" value={profile?.city} />
             <Row label="Phone" value={profile?.phone} />
-            <Row label="Reference ID" value={profile?.ref_id || profile?.id} />
-            <Row label="Verified" value={profile?.verified === true ? 'VERIFIED' : profile?.verified === false ? 'PENDING' : ''} />
+            <Row label="Reference ID" value={profile?.id} />
+            <Row label="Verified" value={profile?.is_verified === true ? 'VERIFIED' : 'PENDING'} />
           </div>
         </div>
       ) : null}

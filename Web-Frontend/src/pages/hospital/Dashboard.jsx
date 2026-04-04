@@ -5,7 +5,7 @@ import StatusBadge from '../../components/StatusBadge.jsx'
 import UrgencyBadge from '../../components/UrgencyBadge.jsx'
 import Pagination from '../../components/Pagination.jsx'
 import LoadingSpinner from '../../components/LoadingSpinner.jsx'
-import { getBloodRequests } from '../../api/requests'
+import { getMyRequests } from '../../api/requests'
 import { formatDateTime } from '../../utils/helpers'
 
 function StatCard({ title, value, sub }) {
@@ -29,7 +29,7 @@ export default function Dashboard() {
     setLoading(true)
     setError(null)
 
-    getBloodRequests({ page, pageSize: 10 })
+    getMyRequests({ page, pageSize: 10 })
       .then((d) => {
         if (!alive) return
         setData(d)
@@ -108,7 +108,7 @@ export default function Dashboard() {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px]">
+              <table className="w-full min-w-225">
                 <thead>
                   <tr className="bg-[#F9FAFB] text-left text-xs font-semibold text-[#6B7280]">
                     <th className="px-6 py-3">REQUEST ID</th>

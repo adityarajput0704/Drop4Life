@@ -17,7 +17,14 @@ export async function getMyRequests({ page = 1, pageSize = 10, status, bloodGrou
 }
 
 export async function createRequest(payload) {
-  const res = await api.post('/blood-requests/', payload)
+  const normalized = {
+    blood_group:  payload.blood_group,
+    units_needed: payload.units_needed,
+    patient_name: payload.patient_name,
+    urgency:      (payload.urgency_level || payload.urgency || '').toLowerCase(), // ← fix key + case
+    notes:        payload.notes || null,
+  }
+  const res = await api.post('/blood-requests/', normalized)
   return res.data
 }
 
