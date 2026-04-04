@@ -9,6 +9,8 @@ import { adminAllRequests } from '../../api/requests'
 import { listDonors } from '../../api/donors'
 import { adminListHospitals } from '../../api/hospitals'
 import { formatDateTime } from '../../utils/helpers'
+import { useWebSocket } from '../../hooks/useWebSockets.js'
+import { useCallback } from 'react'
 
 function StatCard({ title, value, variant }) {
   const base = 'rounded-2xl border border-[#E5E7EB] p-5 shadow-sm'
@@ -35,6 +37,37 @@ export default function Dashboard() {
 
   const [donorStats, setDonorStats] = useState({ total: null })
   const [hospitalStats, setHospitalStats] = useState({ total: null })
+
+  const [refreshTick, setRefreshTick] = useState(0)
+
+
+  
+  // ── WebSocket — listen for real-time events ──────────────────────────────
+  const handleWsEvent = useCallback((event) => {
+    // Show toast for every event type
+    const messages = {
+      REQUEST_CREATED:  `🩸 New request: ${event.payload?.blood_group} — ${event.payload?.hospital_name}`,
+      REQUEST_ACCEPTED: `✅ Request accepted by ${event.payload?.donor_name}`,
+      REQUEST_FULFILLED:`💉 Donation fulfilled at ${event.payload?.hospital_name}`,
+    }
+
+    const message = messages[event.type]
+    if (message) {
+      window.dispatchEvent(
+       new CustomEvent('app:toast', {
+      detail: { type: 'success', message },
+    })
+      )
+    }
+
+    // Refresh table data when requests change
+    if (['REQUEST_CREATED', 'REQUEST_ACCEPTED', 'REQUEST_FULFILLED'].includes(event.type)) {
+      setRefreshTick(t => t + 1)   // triggers useEffect to re-fetch
+    }
+  }, [])
+
+  useWebSocket('admin', handleWsEvent)
+
 
   useEffect(() => {
     let alive = true
@@ -64,7 +97,7 @@ export default function Dashboard() {
     return () => {
       alive = false
     }
-  }, [page])
+  }, [page, refreshTick])
 
   const stats = useMemo(() => {
     const totalRequests = data?.total ?? (data?.items || []).length
@@ -115,7 +148,7 @@ export default function Dashboard() {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px]">
+              <table className="w-full min-w-245">
                 <thead>
                   <tr className="bg-[#F9FAFB] text-left text-xs font-semibold text-[#6B7280]">
                     <th className="px-6 py-3">HOSPITAL</th>

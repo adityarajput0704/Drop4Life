@@ -7,6 +7,9 @@ import Pagination from '../../components/Pagination.jsx'
 import LoadingSpinner from '../../components/LoadingSpinner.jsx'
 import { getMyRequests } from '../../api/requests'
 import { formatDateTime } from '../../utils/helpers'
+import { useWebSocket } from '../../hooks/useWebSockets.js'
+import { useAuth } from '../../context/AuthContext.jsx'
+import { useCallback } from 'react'
 
 function StatCard({ title, value, sub }) {
   return (
@@ -23,6 +26,35 @@ export default function Dashboard() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+
+  const { profile } = useAuth()
+ 
+  // ── WebSocket ────────────────────────────────────────────────────────────
+  const room = profile?.id ? `hospital_${profile.id}` : null
+
+  const handleWsEvent = useCallback((event) => {
+    console.log('[WS EVENT]', event)
+    const messages = {
+      REQUEST_ACCEPTED:  `✅ Donor assigned: ${event.payload?.donor_name}`,
+      REQUEST_FULFILLED: `💉 Donation fulfilled — thank you!`,
+    }
+
+    const message = messages[event.type]
+    if (message) {
+      window.dispatchEvent(
+        new CustomEvent('app:toast', {
+          detail: { type: 'success', message },
+        })
+      )
+    }
+
+    if (['REQUEST_ACCEPTED', 'REQUEST_FULFILLED'].includes(event.type)) {
+      setPage(1)
+    }
+  }, [])
+
+  useWebSocket(room, handleWsEvent)
+
 
   useEffect(() => {
     let alive = true

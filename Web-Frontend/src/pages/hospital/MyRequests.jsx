@@ -7,6 +7,9 @@ import Pagination from '../../components/Pagination.jsx'
 import LoadingSpinner from '../../components/LoadingSpinner.jsx'
 import { cancelRequest, getMyRequests } from '../../api/requests'
 import { formatDate } from '../../utils/helpers'
+import { useCallback } from 'react'
+import { useAuth } from '../../context/AuthContext.jsx'
+import { useWebSocket } from '../../hooks/useWebSockets.js'
 
 function FilterTab({ active, onClick, children }) {
   return (
@@ -42,6 +45,32 @@ export default function MyRequests() {
   const [error, setError] = useState(null)
   const [mutatingId, setMutatingId] = useState(null)
 
+
+  const { profile } = useAuth()
+  const room = profile?.id ? `hospital_${profile.id}` : null
+  const [refreshTick, setRefreshTick] = useState(0)
+
+  const handleWsEvent = useCallback((event) => {
+  const messages = {
+    REQUEST_ACCEPTED:  `✅ Donor assigned: ${event.payload?.donor_name}`,
+    REQUEST_FULFILLED: `💉 Donation marked as fulfilled`,
+  }
+  const message = messages[event.type]
+  if (message) {
+    window.dispatchEvent(
+      new CustomEvent('app:toast', {
+        detail: { type: 'success', message },
+      })
+    )
+  }
+  if (['REQUEST_ACCEPTED', 'REQUEST_FULFILLED'].includes(event.type)) {
+    setRefreshTick(t => t + 1)
+  }
+}, [])
+
+useWebSocket(room, handleWsEvent)
+
+
   const statusParam = useMemo(() => {
     if (statusTab === 'ALL') return undefined
     return statusTab
@@ -52,7 +81,7 @@ export default function MyRequests() {
     setLoading(true)
     setError(null)
 
-    getMyRequests({ page, pageSize: 8, status: statusParam, bloodGroup: bloodGroup || undefined })
+    getMyRequests({ page, pageSize: 8, status: statusParam, bloodGroup: bloodGroup || undefined, refreshTick })
       .then((d) => {
         if (!alive) return
         setData(d)
