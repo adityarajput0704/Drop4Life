@@ -1,19 +1,26 @@
 import 'package:flutter/material.dart';
 import '../api/auth_service.dart';
-import '../config/app_config.dart';
+import '../api/user_service.dart';
+import '../models/user.dart';
+import '../api/dio_client.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
+  final UserService _userService = UserService();
+
   bool _isLoading = false;
   String? _error;
+  User? _currentUser;
 
   bool get isLoading => _isLoading;
   String? get error => _error;
+  User? get currentUser => _currentUser;
 
-  bool get isAuthenticated {
-    if (AppConfig.useMockData) return true;
-    return _authService.getCurrentFirebaseUser() != null;
-  }
+  // Role helpers — used by router and screens
+  bool get isAuthenticated => _authService.getCurrentFirebaseUser() != null;
+  bool get isDonor => _currentUser?.role == 'donor';
+  bool get isAdmin => _currentUser?.role == 'admin';
+  bool get isHospital => _currentUser?.role == 'hospital';
 
   void _setLoading(bool value) {
     _isLoading = value;
@@ -25,25 +32,53 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> login(String email, String password) async {
-    if (AppConfig.useMockData) return true;
-    
+  /// Called after any successful Firebase login.
+  /// Fetches /users/me to get role and profile.
+  /// Returns the role string so the router knows where to navigate.
+  Future<String?> _fetchUserRole() async {
+    try {
+      _currentUser = await _userService.getMyUser();
+      notifyListeners();
+      return _currentUser?.role;
+    } catch (e) {
+      // 404 = Firebase auth OK but no DB record (new user)
+      debugPrint('fetchUserRole error: $e');
+      return null; // null = not registered yet
+    }
+  }
+
+  /// Returns: 'donor', 'admin', 'hospital', 'unregistered', or null on failure
+  Future<String?> login(String email, String password) async {
     try {
       _setLoading(true);
       _setError(null);
       await _authService.loginWithEmail(email, password);
-      return true;
+      return await _fetchUserRole();
     } catch (e) {
       _setError(e.toString());
-      return false;
+      return null;
     } finally {
       _setLoading(false);
     }
   }
 
-  Future<bool> register(String email, String password) async {
-    if (AppConfig.useMockData) return true;
+  /// Returns: 'donor', 'admin', 'hospital', 'unregistered', or null on failure  
+  Future<String?> loginWithGoogle() async {
+    try {
+      _setLoading(true);
+      _setError(null);
+      await _authService.loginWithGoogle();
+      return await _fetchUserRole();
+    } catch (e) {
+      _setError(e.toString());
+      return null;
+    } finally {
+      _setLoading(false);
+    }
+  }
 
+  /// Register creates Firebase user only — DB record created separately
+  Future<bool> register(String email, String password) async {
     try {
       _setLoading(true);
       _setError(null);
@@ -57,26 +92,58 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> loginWithGoogle() async {
-    if (AppConfig.useMockData) return true;
-
+  Future<bool> registerAsDonor({
+    required String fullName,
+    required String city,
+    required int age,
+    required String bloodGroup,
+    required String phone,
+  }) async {
     try {
-      _setLoading(true);
-      _setError(null);
-      await _authService.loginWithGoogle();
+     _setLoading(true);
+     _setError(null);
+
+    // Get email from the Firebase user who just registered
+      final firebaseUser = _authService.getCurrentFirebaseUser();
+     if (firebaseUser == null) {
+       _setError('Session expired. Please try again.');
+       return false;
+     }
+
+    // Step 1: Register user in our DB — email comes from Firebase, not form
+      await DioClient.instance.post('/users/register', data: {
+        'full_name': fullName,
+        'email': firebaseUser.email ?? '',  // ← THIS was missing
+        'phone': phone,
+        'blood_group': bloodGroup,
+      });
+
+    // Step 2: Register as donor
+      await DioClient.instance.post('/donors/register', data: {
+       'city': city,
+       'age': age,
+       'blood_group': bloodGroup,
+      });
+
+    // Step 3: Fetch role to confirm
+      await _fetchUserRole();
       return true;
     } catch (e) {
       _setError(e.toString());
       return false;
     } finally {
-      _setLoading(false);
+     _setLoading(false);
     }
   }
-
   Future<void> logout() async {
-    if (!AppConfig.useMockData) {
-      await _authService.logout();
-    }
+    await _authService.logout();
+    _currentUser = null;
     notifyListeners();
+  }
+
+  /// Called on app start — restores session if Firebase user exists
+  Future<String?> restoreSession() async {
+    if (!isAuthenticated) return null;
+    return await _fetchUserRole();
   }
 }

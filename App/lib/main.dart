@@ -3,7 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'config/app_theme.dart';
-import 'config/app_config.dart';
+// import 'config/app_config.dart';
 import 'providers/auth_provider.dart';
 import 'providers/donor_provider.dart';
 import 'providers/request_provider.dart';
@@ -17,18 +17,15 @@ import 'screens/requests/request_detail_screen.dart';
 import 'screens/history/history_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'models/blood_request.dart';
+// import 'firebase_options.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  if (!AppConfig.useMockData) {
-    try {
-      await Firebase.initializeApp();
-    } catch (e) {
-      debugPrint('Firebase init error: $e');
-    }
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint('Firebase init error: $e');
   }
-
   runApp(
     MultiProvider(
       providers: [
@@ -46,32 +43,39 @@ class Drop4LifeApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = context.read<AuthProvider>();
-
     final GoRouter router = GoRouter(
       initialLocation: '/',
       redirect: (context, state) {
-        if (AppConfig.useMockData) return null;
+        final authProvider = context.read<AuthProvider>();
+        final isFirebaseAuthed = authProvider.isAuthenticated;
+        final loc = state.matchedLocation;
 
-        final isAuthParam = state.matchedLocation == '/login' ||
-                            state.matchedLocation == '/register' ||
-                            state.matchedLocation == '/onboarding' ||
-                            state.matchedLocation == '/';
-        final isAuth = authProvider.isAuthenticated;
+        final publicRoutes = {'/login', '/register', '/onboarding', '/'};
+        final isPublic = publicRoutes.contains(loc);
 
-        if (!isAuth && !isAuthParam) {
+        // Not logged in → force to onboarding
+        if (!isFirebaseAuthed && !isPublic) {
           return '/onboarding';
         }
-        
+
+        // Logged in but trying to access donor routes without donor role
+        if (isFirebaseAuthed && authProvider.currentUser != null) {
+          final role = authProvider.currentUser!.role;
+          // Admin trying to access donor-only screens
+          if (role == 'admin' && loc == '/home') {
+            return null; // allow for now — admin panel in Phase 8
+          }
+        }
+
         return null;
       },
       routes: [
-        GoRoute(path: '/', builder: (context, state) => const SplashScreen()),
-        GoRoute(path: '/onboarding', builder: (context, state) => const OnboardingScreen()),
-        GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
-        GoRoute(path: '/register', builder: (context, state) => const RegisterScreen()),
-        GoRoute(path: '/home', builder: (context, state) => const HomeScreen()),
-        GoRoute(path: '/requests', builder: (context, state) => const RequestsScreen()),
+        GoRoute(path: '/', builder: (_, __) => const SplashScreen()),
+        GoRoute(path: '/onboarding', builder: (_, __) => const OnboardingScreen()),
+        GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
+        GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
+        GoRoute(path: '/home', builder: (_, __) => const HomeScreen()),
+        GoRoute(path: '/requests', builder: (_, __) => const RequestsScreen()),
         GoRoute(
           path: '/request/:id',
           builder: (context, state) {
@@ -82,8 +86,8 @@ class Drop4LifeApp extends StatelessWidget {
             return RequestDetailScreen(request: request);
           },
         ),
-        GoRoute(path: '/history', builder: (context, state) => const HistoryScreen()),
-        GoRoute(path: '/profile', builder: (context, state) => const ProfileScreen()),
+        GoRoute(path: '/history', builder: (_, __) => const HistoryScreen()),
+        GoRoute(path: '/profile', builder: (_, __) => const ProfileScreen()),
       ],
     );
 

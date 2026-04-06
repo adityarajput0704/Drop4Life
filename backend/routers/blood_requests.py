@@ -377,6 +377,45 @@ def admin_cancel_request(
     return build_request_response(blood_request)
 
 
+
+@router.get("/my-donations", response_model=PagedResponse[BloodRequestResponse])
+def get_my_donations(
+    page: int = 1,
+    page_size: int = 10,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns all blood requests where the current user
+    is the assigned donor. This is the donor's personal history.
+    """
+    donor = db.query(Donor).filter(Donor.user_id == current_user.id).first()
+    if not donor:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only registered donors can view donation history.",
+        )
+
+    query = db.query(BloodRequest).filter(
+        BloodRequest.donor_id == donor.id
+    ).order_by(BloodRequest.created_at.desc())
+
+    total = query.count()
+    items = query.offset((page - 1) * page_size).limit(page_size).all()
+    total_pages = (total + page_size - 1) // page_size
+
+    return {
+        "items": [build_request_response(r) for r in items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "has_next": page < total_pages,
+        "has_previous": page > 1,
+    }
+
+
+
 @router.get("/", response_model=PagedResponse[BloodRequestResponse])
 # @limiter.limit("30/minute")
 def list_blood_requests(

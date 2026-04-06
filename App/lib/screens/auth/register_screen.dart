@@ -22,7 +22,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
 
-  final List<String> _bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+  final List<String> _bloodGroups = [
+    'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'
+  ];
 
   void _handleRegister() async {
     if (_passwordController.text != _confirmPasswordController.text) {
@@ -32,23 +34,61 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    final success = await context.read<AuthProvider>().register(
-      _emailController.text,
+    final authProvider = context.read<AuthProvider>();
+
+    // Step 1: Create Firebase user
+    final firebaseSuccess = await authProvider.register(
+      _emailController.text.trim(),
       _passwordController.text,
     );
-    if (success && mounted) {
-      context.go('/home');
-    } else if (mounted) {
+
+    if (!mounted) return;
+
+    if (!firebaseSuccess) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.read<AuthProvider>().error ?? 'Registration Failed')),
+        SnackBar(content: Text(authProvider.error ?? 'Registration Failed')),
+      );
+      return;
+    }
+
+    // Step 2: Register in our DB as donor
+    final donorSuccess = await authProvider.registerAsDonor(
+      fullName: _nameController.text.trim(),
+      city: _cityController.text.trim(),
+      age: int.tryParse(_ageController.text) ?? 0,
+      bloodGroup: _selectedBloodGroup,
+      phone: '',
+    );
+
+    if (!mounted) return;
+
+    if (donorSuccess) {
+      context.go('/home');
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(authProvider.error ?? 'Profile setup failed')),
       );
     }
   }
 
   void _handleGoogleLogin() async {
-    final success = await context.read<AuthProvider>().loginWithGoogle();
-    if (success && mounted) {
+    final authProvider = context.read<AuthProvider>();
+    final role = await authProvider.loginWithGoogle();
+
+    if (!mounted) return;
+
+    if (role == 'donor') {
       context.go('/home');
+    } else if (role == null) {
+      // Google auth OK but no DB record — send to complete profile
+      // For now go home, profile completion can be a future step
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please complete registration')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This app is for donors only')),
+      );
     }
   }
 
@@ -69,12 +109,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
               const SizedBox(height: 8),
               const Text(
                 'Drop4life',
-                style: TextStyle(color: AppTheme.textPrimary, fontSize: 24, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: AppTheme.textPrimary,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 4),
               const Text(
                 'LIFE SAVING NETWORK ACCESS',
-                style: TextStyle(color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 32),
               Row(
@@ -85,9 +133,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       child: Container(
                         padding: const EdgeInsets.only(bottom: 8),
                         decoration: const BoxDecoration(
-                          border: Border(bottom: BorderSide(color: AppTheme.border, width: 2)),
+                          border: Border(
+                            bottom: BorderSide(color: AppTheme.border, width: 2),
+                          ),
                         ),
-                        child: const Text('Login', textAlign: TextAlign.center, style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.bold)),
+                        child: const Text(
+                          'Login',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: AppTheme.textSecondary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -95,9 +152,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     child: Container(
                       padding: const EdgeInsets.only(bottom: 8),
                       decoration: const BoxDecoration(
-                        border: Border(bottom: BorderSide(color: AppTheme.primaryRed, width: 2)),
+                        border: Border(
+                          bottom: BorderSide(color: AppTheme.primaryRed, width: 2),
+                        ),
                       ),
-                      child: const Text('Register', textAlign: TextAlign.center, style: TextStyle(color: AppTheme.primaryRed, fontWeight: FontWeight.bold)),
+                      child: const Text(
+                        'Register',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppTheme.primaryRed,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -107,13 +173,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildLabel('FULL NAME'),
-                  TextField(controller: _nameController, decoration: const InputDecoration(hintText: 'John Doe')),
+                  TextField(
+                    controller: _nameController,
+                    decoration: const InputDecoration(hintText: 'John Doe'),
+                  ),
                   const SizedBox(height: 16),
-                  
+
                   _buildLabel('EMAIL ADDRESS'),
-                  TextField(controller: _emailController, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(hintText: 'name@drop4life.com')),
+                  TextField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(hintText: 'name@drop4life.com'),
+                  ),
                   const SizedBox(height: 16),
-                  
+
                   _buildLabel('PASSWORD'),
                   TextField(
                     controller: _passwordController,
@@ -121,13 +194,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     decoration: InputDecoration(
                       hintText: '••••••••',
                       suffixIcon: IconButton(
-                        icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: AppTheme.textSecondary),
-                        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                          color: AppTheme.textSecondary,
+                        ),
+                        onPressed: () =>
+                            setState(() => _obscurePassword = !_obscurePassword),
                       ),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  
+
                   _buildLabel('CONFIRM PASSWORD'),
                   TextField(
                     controller: _confirmPasswordController,
@@ -135,13 +214,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     decoration: InputDecoration(
                       hintText: '••••••••',
                       suffixIcon: IconButton(
-                        icon: Icon(_obscureConfirmPassword ? Icons.visibility_off : Icons.visibility, color: AppTheme.textSecondary),
-                        onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                        icon: Icon(
+                          _obscureConfirmPassword
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                          color: AppTheme.textSecondary,
+                        ),
+                        onPressed: () => setState(() =>
+                            _obscureConfirmPassword = !_obscureConfirmPassword),
                       ),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  
+
                   Row(
                     children: [
                       Expanded(
@@ -149,7 +234,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             _buildLabel('CITY'),
-                            TextField(controller: _cityController, decoration: const InputDecoration(hintText: 'New York')),
+                            TextField(
+                              controller: _cityController,
+                              decoration:
+                                  const InputDecoration(hintText: 'Mumbai'),
+                            ),
                           ],
                         ),
                       ),
@@ -159,14 +248,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             _buildLabel('AGE'),
-                            TextField(controller: _ageController, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: '28')),
+                            TextField(
+                              controller: _ageController,
+                              keyboardType: TextInputType.number,
+                              decoration:
+                                  const InputDecoration(hintText: '25'),
+                            ),
                           ],
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 16),
-                  
+
                   _buildLabel('BLOOD GROUP'),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -182,7 +276,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           return DropdownMenuItem(value: bg, child: Text(bg));
                         }).toList(),
                         onChanged: (val) {
-                          if (val != null) setState(() => _selectedBloodGroup = val);
+                          if (val != null) {
+                            setState(() => _selectedBloodGroup = val);
+                          }
                         },
                       ),
                     ),
@@ -194,17 +290,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: isLoading ? null : _handleRegister,
-                  child: isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('Create Account →'),
+                  child: isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text('Create Account →'),
                 ),
               ),
               const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text("Already have an account? ", style: TextStyle(color: AppTheme.textSecondary)),
+                  const Text(
+                    "Already have an account? ",
+                    style: TextStyle(color: AppTheme.textSecondary),
+                  ),
                   GestureDetector(
                     onTap: () => context.go('/login'),
-                    child: const Text('Sign In', style: TextStyle(color: AppTheme.primaryRed, fontWeight: FontWeight.bold)),
+                    child: const Text(
+                      'Sign In',
+                      style: TextStyle(
+                        color: AppTheme.primaryRed,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -212,7 +319,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
               const Row(
                 children: [
                   Expanded(child: Divider(color: AppTheme.border)),
-                  Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Text('OR', style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.bold))),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'OR',
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                   Expanded(child: Divider(color: AppTheme.border)),
                 ],
               ),
@@ -221,15 +337,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: isLoading ? null : _handleGoogleLogin,
-                  icon: const Icon(Icons.g_mobiledata, size: 32, color: AppTheme.textPrimary),
-                  label: const Text('Continue with Google', style: TextStyle(color: AppTheme.textPrimary)),
+                  icon: const Icon(
+                    Icons.g_mobiledata,
+                    size: 32,
+                    color: AppTheme.textPrimary,
+                  ),
+                  label: const Text(
+                    'Continue with Google',
+                    style: TextStyle(color: AppTheme.textPrimary),
+                  ),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     side: const BorderSide(color: AppTheme.border),
                   ),
                 ),
               ),
+              const SizedBox(height: 32),
             ],
           ),
         ),
@@ -240,7 +366,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Widget _buildLabel(String text) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Text(text, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: AppTheme.textSecondary,
+        ),
+      ),
     );
   }
 }

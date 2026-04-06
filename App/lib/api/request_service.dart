@@ -82,6 +82,7 @@ class RequestService {
     await DioClient.instance.post('/blood-requests/$requestId/accept');
   }
 
+
   Future<RequestResponse> getMyHistory(int page) async {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(seconds: 1));
@@ -95,11 +96,11 @@ class RequestService {
         hasPrevious: false,
       );
     }
-
-    final response = await DioClient.instance.get('/blood-requests/', queryParameters: {
-      'page': page,
-      'donor_history': true,
-    });
-    return RequestResponse.fromJson(response.data);
+  // Fetches requests where the current donor is the assigned donor
+    final response = await DioClient.instance.get(
+      '/blood-requests/my-donations',  // ← we confirm this after your grep
+      queryParameters: {'page': page},
+  );
+   return RequestResponse.fromJson(response.data);
   }
 }

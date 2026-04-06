@@ -1,3 +1,4 @@
+
 class Donor {
   final String id;
   final String fullName;
@@ -24,14 +25,22 @@ class Donor {
   });
 
   factory Donor.fromJson(Map<String, dynamic> json) {
+    // Backend sends availability: "available" — convert to bool
+    bool parseAvailability(dynamic value) {
+      if (value is bool) return value;
+      if (value is String) return value.toLowerCase() == 'available';
+      return true;
+    }
+
     return Donor(
-      id: json['id'] ?? '',
+      // Backend sends int id — convert to String
+      id: json['id']?.toString() ?? '',
       fullName: json['full_name'] ?? '',
       email: json['email'] ?? '',
       bloodGroup: json['blood_group'] ?? '',
       city: json['city'] ?? '',
       age: json['age'] ?? 0,
-      isAvailable: json['is_available'] ?? true,
+      isAvailable: parseAvailability(json['availability'] ?? json['is_available']),
       totalDonations: json['total_donations'] ?? 0,
       livesSaved: json['lives_saved'] ?? 0,
       lastDonation: json['last_donation'] != null

@@ -7,7 +7,14 @@ class DioClient {
     baseUrl: AppConfig.apiBaseUrl,
     connectTimeout: const Duration(seconds: 10),
     receiveTimeout: const Duration(seconds: 10),
-  ))..interceptors.add(
+  ))..interceptors.addAll([
+      LogInterceptor(
+        requestBody: true,
+        responseBody: true,
+        requestHeader: true,
+        error: true,
+        logPrint: (obj) => print('🌐 DIO: $obj'),
+      ),
       InterceptorsWrapper(
         onRequest: (options, handler) async {
           if (!AppConfig.useMockData) {
@@ -27,7 +34,7 @@ class DioClient {
           return handler.next(e);
         },
       ),
-    );
+    ]);
 
   static Dio get instance => _dio;
 }

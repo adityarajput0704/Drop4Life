@@ -1,12 +1,13 @@
+
 class BloodRequest {
   final String id;
   final String hospitalName;
   final String city;
   final String hospitalAddress;
   final String bloodGroup;
-  final String urgency; // CRITICAL, HIGH, MEDIUM, LOW
+  final String urgency;
   final int unitsNeeded;
-  final String status; // PENDING, ACCEPTED, FULFILLED, CANCELLED
+  final String status;
   final String patientName;
   final String caseDescription;
   final String contactNumber;
@@ -31,19 +32,43 @@ class BloodRequest {
     this.cancellationReason,
   });
 
+  // Backend sends 'open' — Flutter UI expects 'PENDING'
+  // Backend sends 'fulfilled' — Flutter UI expects 'FULFILLED'
+  static String _normalizeStatus(String? raw) {
+    switch (raw?.toLowerCase()) {
+      case 'open':
+        return 'PENDING';
+      case 'accepted':
+        return 'ACCEPTED';
+      case 'fulfilled':
+        return 'FULFILLED';
+      case 'cancelled':
+        return 'CANCELLED';
+      default:
+        return 'PENDING';
+    }
+  }
+
   factory BloodRequest.fromJson(Map<String, dynamic> json) {
     return BloodRequest(
-      id: json['id'] ?? '',
+      // Backend sends int id — convert to String
+      id: json['id']?.toString() ?? '',
       hospitalName: json['hospital_name'] ?? '',
-      city: json['city'] ?? '',
+      // Backend field is hospital_city, not city
+      city: json['hospital_city'] ?? json['city'] ?? '',
+      // Backend doesn't send address — graceful fallback
       hospitalAddress: json['hospital_address'] ?? '',
       bloodGroup: json['blood_group'] ?? '',
-      urgency: json['urgency'] ?? 'MEDIUM',
+      // Backend sends lowercase — normalize to uppercase
+      urgency: (json['urgency'] ?? 'medium').toString().toUpperCase(),
       unitsNeeded: json['units_needed'] ?? 1,
-      status: json['status'] ?? 'PENDING',
+      status: _normalizeStatus(json['status']),
       patientName: json['patient_name'] ?? '',
-      caseDescription: json['case_description'] ?? '',
-      contactNumber: json['contact_number'] ?? '',
+      // Backend field is notes, not case_description
+      caseDescription: json['notes'] ?? json['case_description'] ?? '',
+      // Backend field is hospital_phone, not contact_number
+      contactNumber: json['hospital_phone'] ?? json['contact_number'] ?? '',
+      // Backend doesn't send distance — default to 0.0
       distance: (json['distance'] ?? 0.0).toDouble(),
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at']) ?? DateTime.now()

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_theme.dart';
-import '../../config/app_config.dart';
+// import '../../config/app_config.dart';
 import '../../providers/auth_provider.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -21,18 +21,23 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _checkAuthAndNavigate() async {
     await Future.delayed(const Duration(seconds: 2));
-    
     if (!mounted) return;
 
-    if (AppConfig.useMockData) {
+    final authProvider = context.read<AuthProvider>();
+
+    if (!authProvider.isAuthenticated) {
       context.go('/onboarding');
       return;
     }
 
-    final authProvider = context.read<AuthProvider>();
-    if (authProvider.isAuthenticated) {
+  // Firebase session exists — restore role from backend
+    final role = await authProvider.restoreSession();
+    if (!mounted) return;
+
+    if (role == 'donor') {
       context.go('/home');
     } else {
+      // Not a donor (admin/hospital) or not registered yet
       context.go('/onboarding');
     }
   }

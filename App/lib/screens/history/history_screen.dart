@@ -24,16 +24,38 @@ class _HistoryScreenState extends State<HistoryScreen> {
     });
   }
 
+  // Calculates donor tier from total donations
+  Map<String, String> _getDonorTier(int totalDonations) {
+    if (totalDonations >= 20) {
+      return {'title': 'Platinum Donor', 'next': 'MAX LEVEL REACHED'};
+    } else if (totalDonations >= 10) {
+      return {'title': 'Gold Donor', 'next': '${20 - totalDonations} MORE TO PLATINUM'};
+    } else if (totalDonations >= 5) {
+      return {'title': 'Silver Donor', 'next': '${10 - totalDonations} MORE TO GOLD'};
+    } else {
+      return {'title': 'Bronze Donor', 'next': '${5 - totalDonations} MORE TO SILVER'};
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final requestProvider = context.watch<RequestProvider>();
     final donorProvider = context.watch<DonorProvider>();
     final donor = donorProvider.donor;
+    final totalDonations = donor?.totalDonations ?? 0;
+    final livesSaved = donor?.livesSaved ?? 0;
+
+    // Fix: proper calculation — not 0 * 0.5
+    final litersDonatd = (totalDonations * 0.45).toStringAsFixed(1);
+    final tier = _getDonorTier(totalDonations);
 
     return Scaffold(
       appBar: AppBar(
         leading: const Icon(Icons.water_drop, color: AppTheme.primaryRed),
-        title: const Text('Drop4life', style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryRed)),
+        title: const Text(
+          'Drop4life',
+          style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryRed),
+        ),
         centerTitle: false,
         actions: [
           IconButton(icon: const Icon(Icons.notifications_none), onPressed: () {}),
@@ -50,7 +72,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Top Impact Card
+                    // Impact Card — fixed calculation
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(24),
@@ -64,18 +86,39 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           const Positioned(
                             right: -10,
                             top: -10,
-                            child: Icon(Icons.favorite, size: 100, color: Color(0xFFFEE2E2)),
+                            child: Icon(
+                              Icons.favorite,
+                              size: 100,
+                              color: Color(0xFFFEE2E2),
+                            ),
                           ),
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('TOTAL IMPACT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppTheme.textSecondary)),
-                              const SizedBox(height: 8),
-                              Text('${(donor?.livesSaved ?? 0) * 0.5} Liters', style: const TextStyle(color: AppTheme.primaryRed, fontSize: 36, fontWeight: FontWeight.bold)),
+                              const Text(
+                                'TOTAL IMPACT',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  color: AppTheme.textSecondary,
+                                ),
+                              ),
                               const SizedBox(height: 8),
                               Text(
-                                'You have saved approximately ${donor?.livesSaved ?? 0} lives through your donations.',
-                                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 14),
+                                '$litersDonatd Liters',
+                                style: const TextStyle(
+                                  color: AppTheme.primaryRed,
+                                  fontSize: 36,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'You have saved approximately $livesSaved lives through your donations.',
+                                style: const TextStyle(
+                                  color: AppTheme.textSecondary,
+                                  fontSize: 14,
+                                ),
                               ),
                             ],
                           ),
@@ -84,7 +127,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Achievement Card
+                    // Achievement Card — dynamic tier
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
@@ -92,15 +135,29 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         color: AppTheme.primaryRed,
                         borderRadius: BorderRadius.circular(16),
                       ),
-                      child: const Row(
+                      child: Row(
                         children: [
-                          Icon(Icons.star, color: Colors.white, size: 32),
-                          SizedBox(width: 16),
+                          const Icon(Icons.star, color: Colors.white, size: 32),
+                          const SizedBox(width: 16),
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Silver Donor', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
-                              Text('3 MORE TO GOLD', style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold)),
+                              Text(
+                                tier['title']!,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
+                                ),
+                              ),
+                              Text(
+                                tier['next']!,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ],
                           ),
                         ],
@@ -108,24 +165,38 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     ),
                     const SizedBox(height: 32),
 
-                    // Section Header
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('History', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                        const Text(
+                          'History',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
                         FilterChip(
-                          label: const Text('ALL TIME', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                          label: const Text(
+                            'ALL TIME',
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                          ),
                           onSelected: (val) {},
                           backgroundColor: AppTheme.surfaceCard,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 16),
 
-                    // List
                     if (requestProvider.history.isEmpty)
-                      const Center(child: Padding(padding: EdgeInsets.all(24.0), child: Text('No donation history found.', style: TextStyle(color: AppTheme.textSecondary))))
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24.0),
+                          child: Text(
+                            'No donation history found.',
+                            style: TextStyle(color: AppTheme.textSecondary),
+                          ),
+                        ),
+                      )
                     else
                       ListView.builder(
                         shrinkWrap: true,
@@ -144,27 +215,44 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Row(
-                                          children: [
-                                            StatusBadge(status: h.status),
-                                          ],
-                                        ),
+                                        StatusBadge(status: h.status),
                                         const SizedBox(height: 8),
-                                        Text(h.hospitalName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                        Text(
+                                          h.hospitalName,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                          ),
+                                        ),
                                         const SizedBox(height: 4),
                                         Row(
                                           children: [
-                                            const Icon(Icons.calendar_today, size: 12, color: AppTheme.textSecondary),
+                                            const Icon(
+                                              Icons.calendar_today,
+                                              size: 12,
+                                              color: AppTheme.textSecondary,
+                                            ),
                                             const SizedBox(width: 4),
                                             Text(
                                               '${_month(h.createdAt.month)} ${h.createdAt.day}, ${h.createdAt.year}',
-                                              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                                              style: const TextStyle(
+                                                color: AppTheme.textSecondary,
+                                                fontSize: 12,
+                                              ),
                                             ),
                                           ],
                                         ),
-                                        if (h.status.toUpperCase() == 'CANCELLED' && h.cancellationReason != null) ...[
+                                        if (h.status.toUpperCase() == 'CANCELLED' &&
+                                            h.cancellationReason != null) ...[
                                           const SizedBox(height: 8),
-                                          Text(h.cancellationReason!, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12, fontStyle: FontStyle.italic)),
+                                          Text(
+                                            h.cancellationReason!,
+                                            style: const TextStyle(
+                                              color: AppTheme.textSecondary,
+                                              fontSize: 12,
+                                              fontStyle: FontStyle.italic,
+                                            ),
+                                          ),
                                         ],
                                         const SizedBox(height: 16),
                                         TextButton(
@@ -172,17 +260,27 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                           style: TextButton.styleFrom(
                                             padding: EdgeInsets.zero,
                                             minimumSize: const Size(50, 20),
-                                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                            tapTargetSize:
+                                                MaterialTapTargetSize.shrinkWrap,
                                           ),
                                           child: Text(
-                                            h.status.toUpperCase() == 'FULFILLED' ? 'View Receipt ›' : 'View Details ›',
-                                            style: const TextStyle(color: AppTheme.primaryRed, fontWeight: FontWeight.bold),
+                                            h.status.toUpperCase() == 'FULFILLED'
+                                                ? 'View Receipt ›'
+                                                : 'View Details ›',
+                                            style: const TextStyle(
+                                              color: AppTheme.primaryRed,
+                                              fontWeight: FontWeight.bold,
+                                            ),
                                           ),
                                         ),
                                       ],
                                     ),
                                   ),
-                                  BloodBadge(bloodGroup: h.bloodGroup, size: 40, fontSize: 14),
+                                  BloodBadge(
+                                    bloodGroup: h.bloodGroup,
+                                    size: 40,
+                                    fontSize: 14,
+                                  ),
                                 ],
                               ),
                             ),
@@ -198,7 +296,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   String _month(int m) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
     return months[m - 1];
   }
 }

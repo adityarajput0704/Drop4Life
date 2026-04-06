@@ -16,26 +16,58 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
 
-  void _handleLogin() async {
-    final success = await context.read<AuthProvider>().login(
-      _emailController.text,
-      _passwordController.text,
-    );
-    if (success && mounted) {
-      context.go('/home');
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.read<AuthProvider>().error ?? 'Login Failed')),
-      );
-    }
+  void _routeByRole(String? role, String? error) {
+    switch (role) {
+     case 'donor':
+       context.go('/home');
+       break;
+     case 'admin':
+       // Admin dashboard — placeholder until Phase 8
+       ScaffoldMessenger.of(context).showSnackBar(
+         const SnackBar(content: Text('Admin panel coming soon. You are logged in as Admin.')),
+       );
+       break;
+     case 'hospital':
+       // Hospital dashboard — placeholder
+       ScaffoldMessenger.of(context).showSnackBar(
+         const SnackBar(content: Text('Hospital panel coming soon.')),
+       );
+       break;
+     case null:
+       // null = /users/me returned 404 — new user, not registered in DB yet
+       // OR login itself failed
+       final error = context.read<AuthProvider>().error;
+       if (error != null) {
+         ScaffoldMessenger.of(context).showSnackBar(
+           SnackBar(content: Text(error)),
+         );
+       } else {
+         // Firebase auth succeeded but no DB record
+         context.go('/register');
+       }
+       break;
+   }
   }
 
-  void _handleGoogleLogin() async {
-    final success = await context.read<AuthProvider>().loginWithGoogle();
-    if (success && mounted) {
-      context.go('/home');
+
+  void _handleLogin() async {
+    final authProvider = context.read<AuthProvider>();
+    final role = await authProvider.login(
+      _emailController.text.trim(),
+      _passwordController.text,
+    );
+
+    if (!mounted) return;
+      _routeByRole(role, authProvider.error);
     }
+
+  void _handleGoogleLogin() async {
+    final authProvider = context.read<AuthProvider>();
+    final role = await authProvider.loginWithGoogle();
+    if (!mounted) return;
+    _routeByRole(role, authProvider.error);
   }
+
 
   @override
   Widget build(BuildContext context) {
