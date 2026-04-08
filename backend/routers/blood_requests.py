@@ -304,32 +304,26 @@ def accept_blood_request(
     return build_request_response(blood_request)
 
 
-@router.post("/{request_id}/fulfil", response_model=BloodRequestResponse)
+@router.patch("/{request_id}/fulfil", response_model=BloodRequestResponse)
 def fulfil_blood_request(
-    request_id:       int,
-    background_tasks: BackgroundTasks,              # ← inject this
-    current_user:     User = Depends(get_current_user),
-    db:               Session = Depends(get_db),
+    request_id: int,
+    hospital_id: int,   # ✅ explicit
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
 ):
-    donor = db.query(Donor).filter(Donor.user_id == current_user.id).first()
-    if not donor:
-        raise HTTPException(status_code=403, detail="Only donors can fulfil requests.")
+    hospital = db.query(Hospital).filter(Hospital.id == hospital_id).first()
+    if not hospital:
+        raise HTTPException(404, "Hospital not found")
 
     blood_request = db.query(BloodRequest).filter(BloodRequest.id == request_id).first()
     if not blood_request:
-        raise HTTPException(status_code=404, detail="Blood request not found.")
+        raise HTTPException(404, "Blood request not found")
 
-    if blood_request.donor_id != donor.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not the assigned donor for this request.",
-        )
+    if blood_request.hospital_id != hospital.id:
+        raise HTTPException(403, "Not your request")
 
     if blood_request.status != RequestStatusEnum.ACCEPTED:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Only accepted requests can be marked as fulfilled.",
-        )
+        raise HTTPException(409, "Only accepted requests can be fulfilled")
 
     blood_request.status = RequestStatusEnum.FULFILLED
     db.commit()
@@ -337,16 +331,15 @@ def fulfil_blood_request(
 
     invalidate_cache("blood_requests:*")
 
-    # Add background task — runs after response is sent
     background_tasks.add_task(
-    notify_donation_fulfilled,
-    request_id=blood_request.id,
-    donor_id=donor.id,
-    hospital_id=blood_request.hospital_id,
-    db=db,
-)
-    return build_request_response(blood_request)
+        notify_donation_fulfilled,
+        request_id=blood_request.id,
+        donor_id=blood_request.donor_id,
+        hospital_id=hospital.id,
+        db=db,
+    )
 
+    return build_request_response(blood_request)
 
 # ── ADMIN ─────────────────────────────────────────────────────────────────────
 

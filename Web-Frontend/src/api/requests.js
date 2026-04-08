@@ -50,8 +50,14 @@ export async function adminAllRequests({
 }
 
 
-export async function fulfillRequest(requestId) {
-  const res = await api.post(`/blood-requests/${requestId}/fulfil`)
+export async function fulfilRequest(requestId, hospitalId) {
+  const res = await api.patch(
+    `/blood-requests/${requestId}/fulfil`,
+    null,
+    {
+      params: { hospital_id: hospitalId }
+    }
+  )
   return res.data
 }
 
@@ -64,3 +70,5 @@ export async function adminCancelRequest(requestId) {
   const res = await api.post(`/blood-requests/admin/${requestId}/cancel`)
   return res.data
 }
+
+
