@@ -10,6 +10,7 @@ import { formatDate } from '../../utils/helpers'
 import { useCallback } from 'react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useWebSocket } from '../../hooks/useWebSockets.js'
+import RequestDetailModal from '../../components/RequestDetailModal.jsx'
 
 function FilterTab({ active, onClick, children }) {
   return (
@@ -44,31 +45,31 @@ export default function MyRequests() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [mutatingId, setMutatingId] = useState(null)
-
+  const [selectedRequest, setSelectedRequest] = useState(null)
 
   const { profile } = useAuth()
   const room = profile?.id ? `hospital_${profile.id}` : null
   const [refreshTick, setRefreshTick] = useState(0)
 
   const handleWsEvent = useCallback((event) => {
-  const messages = {
-    REQUEST_ACCEPTED:  `✅ Donor assigned: ${event.payload?.donor_name}`,
-    REQUEST_FULFILLED: `💉 Donation marked as fulfilled`,
-  }
-  const message = messages[event.type]
-  if (message) {
-    window.dispatchEvent(
-      new CustomEvent('app:toast', {
-        detail: { type: 'success', message },
-      })
-    )
-  }
-  if (['REQUEST_ACCEPTED', 'REQUEST_FULFILLED'].includes(event.type)) {
-    setRefreshTick(t => t + 1)
-  }
-}, [])
+    const messages = {
+      REQUEST_ACCEPTED: `✅ Donor assigned: ${event.payload?.donor_name}`,
+      REQUEST_FULFILLED: `💉 Donation marked as fulfilled`,
+    }
+    const message = messages[event.type]
+    if (message) {
+      window.dispatchEvent(
+        new CustomEvent('app:toast', {
+          detail: { type: 'success', message },
+        })
+      )
+    }
+    if (['REQUEST_ACCEPTED', 'REQUEST_FULFILLED'].includes(event.type)) {
+      setRefreshTick(t => t + 1)
+    }
+  }, [])
 
-useWebSocket(room, handleWsEvent)
+  useWebSocket(room, handleWsEvent)
 
 
   const statusParam = useMemo(() => {
@@ -98,7 +99,7 @@ useWebSocket(room, handleWsEvent)
     return () => {
       alive = false
     }
-  }, [page, statusParam, bloodGroup])
+  }, [page, statusParam, bloodGroup, refreshTick])
 
   async function onCancel(req) {
     const id = req?.id || req?.request_id
@@ -282,6 +283,24 @@ useWebSocket(room, handleWsEvent)
           </div>
         ) : null}
       </div>
+      {selectedRequest && (
+        <RequestDetailModal
+          request={selectedRequest}
+          onClose={() => setSelectedRequest(null)}
+          onUpdated={async () => {
+            setSelectedRequest(null)
+            const refreshed = await getMyRequests({
+              page,
+              pageSize: 8,
+              status: statusParam,
+              bloodGroup: bloodGroup || undefined,
+            })
+            setData(refreshed)
+          }}
+          showCancel={true}     
+          showAdminCancel={false}
+        />
+      )}
     </PageLayout>
   )
 }

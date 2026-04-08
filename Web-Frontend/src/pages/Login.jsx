@@ -31,7 +31,7 @@ function TabButton({ active, onClick, children }) {
 
 function getErrorText(error) {
   const code = error?.code || ''
-  if (code === 'app/firebase-not-configured') return 'Firebase is not configured yet (frontend-only mode).'
+  if (code === 'app/firebase-not-configured') return 'Firebase is not configured yet.'
   if (code.includes('auth/invalid-credential')) return 'Invalid email or password.'
   if (code.includes('auth/too-many-requests')) return 'Too many attempts. Please try again later.'
   return 'Login failed. Please try again.'
@@ -41,10 +41,8 @@ export default function Login() {
   const navigate = useNavigate()
   const { user, role, loading, login, error } = useAuth()
 
-  const [mode, setMode] = useState('hospital')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [staySignedIn, setStaySignedIn] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [localError, setLocalError] = useState(null)
 
@@ -65,28 +63,13 @@ export default function Login() {
       setLocalError('Please enter your email and password.')
       return
     }
-
     if (USE_MOCK) {
-      if (mode === 'hospital') navigate('/hospital/dashboard', { replace: true })
-      if (mode === 'admin') navigate('/admin/dashboard', { replace: true })
+      navigate('/admin/dashboard', { replace: true })
       return
     }
-
     setSubmitting(true)
     try {
       await login(email.trim(), password)
-      if (!staySignedIn) {
-        window.setTimeout(() => {
-          window.dispatchEvent(
-            new CustomEvent('app:toast', {
-              detail: {
-                type: 'info',
-                message: 'Session set for 24 hours (backend enforcement recommended).',
-              },
-            }),
-          )
-        }, 200)
-      }
     } catch (e2) {
       setLocalError(getErrorText(e2))
     } finally {
@@ -96,8 +79,7 @@ export default function Login() {
 
   return (
     <div className="relative min-h-screen bg-[#F7F7F7] text-[#111827]">
-
-      <div className="mx-auto flex min-h-screen max-w-6xl items-center justify-center px-6 py-12 md:justify-center">
+      <div className="mx-auto flex min-h-screen max-w-6xl items-center justify-center px-6 py-12">
         <div className="w-full max-w-md rounded-2xl border border-[#E5E7EB] bg-white p-8 shadow-sm">
           <div className="space-y-2 text-center">
             <BloodLinkLogo />
@@ -106,20 +88,23 @@ export default function Login() {
             </div>
           </div>
 
+          {/* ── Tabs ── */}
           <div className="mt-6 rounded-full bg-[#F7F7F7] p-1">
             <div className="flex items-center justify-center gap-2">
-              <TabButton active={mode === 'hospital'} onClick={() => setMode('hospital')}>
-                Hospital View
+              <TabButton active onClick={() => {}}>
+                Login
               </TabButton>
-              <TabButton active={mode === 'admin'} onClick={() => setMode('admin')}>
-                System Admin
+              <TabButton active={false} onClick={() => navigate('/register')}>
+                Register
               </TabButton>
             </div>
           </div>
 
           <form onSubmit={onSubmit} className="mt-6 space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-[#6B7280]">PROFESSIONAL EMAIL</label>
+              <label className="block text-xs font-semibold text-[#6B7280]">
+                PROFESSIONAL EMAIL
+              </label>
               <input
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -132,11 +117,10 @@ export default function Login() {
 
             <div>
               <div className="flex items-center justify-between">
-                <label className="block text-xs font-semibold text-[#6B7280]">SECURE PASSWORD</label>
-                <button
-                  type="button"
-                  className="text-xs font-semibold text-[#C8102E] hover:underline"
-                >
+                <label className="block text-xs font-semibold text-[#6B7280]">
+                  SECURE PASSWORD
+                </label>
+                <button type="button" className="text-xs font-semibold text-[#C8102E] hover:underline">
                   Forgot?
                 </button>
               </div>
@@ -150,18 +134,6 @@ export default function Login() {
               />
             </div>
 
-            <div className="flex items-center justify-between">
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-[#111827]">
-                <input
-                  type="checkbox"
-                  checked={staySignedIn}
-                  onChange={(e) => setStaySignedIn(e.target.checked)}
-                  className="h-4 w-4 rounded border-[#E5E7EB] text-[#C8102E] focus:ring-[#C8102E]"
-                />
-                Stay signed in for 24 hours
-              </label>
-            </div>
-
             {(localError || error) && (
               <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {localError || getErrorText(error)}
@@ -171,31 +143,32 @@ export default function Login() {
             <button
               type="submit"
               disabled={!canSubmit || submitting || loading}
-              className={[
-                'w-full rounded-xl bg-[#C8102E] px-4 py-3 text-sm font-semibold text-white shadow-sm',
-                'disabled:cursor-not-allowed disabled:opacity-60',
-              ].join(' ')}
+              className="w-full rounded-xl bg-[#C8102E] px-4 py-3 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {submitting ? 'Signing in…' : 'Dashboard Login'}
+              {submitting ? 'Signing in…' : 'Sign In →'}
             </button>
           </form>
 
+          <p className="mt-6 text-center text-xs text-[#6B7280]">
+            New hospital?{' '}
+            <button
+              type="button"
+              onClick={() => navigate('/register')}
+              className="font-semibold text-[#C8102E] hover:underline"
+            >
+              Register your facility
+            </button>
+          </p>
+
           <div className="mt-6 flex items-center justify-center gap-4 text-xs text-[#6B7280]">
-            <button type="button" className="hover:text-[#111827] hover:underline">
-              Privacy Protocols
-            </button>
+            <button type="button" className="hover:text-[#111827] hover:underline">Privacy Protocols</button>
             <span>•</span>
-            <button type="button" className="hover:text-[#111827] hover:underline">
-              System Status
-            </button>
+            <button type="button" className="hover:text-[#111827] hover:underline">System Status</button>
             <span>•</span>
-            <button type="button" className="hover:text-[#111827] hover:underline">
-              Technical Support
-            </button>
+            <button type="button" className="hover:text-[#111827] hover:underline">Technical Support</button>
           </div>
         </div>
       </div>
     </div>
   )
 }
-

@@ -6,6 +6,8 @@ import UrgencyBadge from '../../components/UrgencyBadge.jsx'
 import StatusBadge from '../../components/StatusBadge.jsx'
 import { adminAllRequests } from '../../api/requests'
 import { formatDateTime } from '../../utils/helpers'
+import RequestDetailModal from '../../components/RequestDetailModal.jsx'
+import { adminCancelRequest } from '../../api/requests'
 
 function OutlinedBloodBadge({ group }) {
   if (!group) return null
@@ -25,6 +27,7 @@ export default function AllRequests() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [selectedRequest, setSelectedRequest] = useState(null)
 
   const query = useMemo(
     () => ({
@@ -73,12 +76,12 @@ export default function AllRequests() {
       open.length === 0
         ? 0
         : Math.round(
-            open.reduce((sum, r) => {
-              const d = new Date(r?.created_at)
-              if (Number.isNaN(d.getTime())) return sum
-              return sum + (Date.now() - d.getTime()) / 60000
-            }, 0) / open.length,
-          )
+          open.reduce((sum, r) => {
+            const d = new Date(r?.created_at)
+            if (Number.isNaN(d.getTime())) return sum
+            return sum + (Date.now() - d.getTime()) / 60000
+          }, 0) / open.length,
+        )
 
     const urgentAlerts = items.filter((r) => String(r?.urgency || r?.urgency_level || '').toUpperCase() === 'CRITICAL').length
 
@@ -105,7 +108,7 @@ export default function AllRequests() {
                   setPage(1)
                 }}
                 placeholder="Search city…"
-                className="h-11 w-full rounded-xl border border-[#E5E7EB] bg-white px-4 text-sm font-semibold text-[#111827] outline-none focus:border-[#C8102E] md:max-w-[260px]"
+                className="h-11 w-full rounded-xl border border-[#E5E7EB] bg-white px-4 text-sm font-semibold text-[#111827] outline-none focus:border-[#C8102E] md:max-w-65"
               />
               <select
                 value={status}
@@ -113,7 +116,7 @@ export default function AllRequests() {
                   setStatus(e.target.value)
                   setPage(1)
                 }}
-                className="h-11 w-full rounded-xl border border-[#E5E7EB] bg-white px-3 text-sm font-semibold text-[#111827] outline-none focus:border-[#C8102E] md:max-w-[220px]"
+                className="h-11 w-full rounded-xl border border-[#E5E7EB] bg-white px-3 text-sm font-semibold text-[#111827] outline-none focus:border-[#C8102E] md:max-w-55"
               >
                 <option value="">Status (All)</option>
                 <option value="OPEN">OPEN</option>
@@ -127,7 +130,7 @@ export default function AllRequests() {
                   setBloodGroup(e.target.value)
                   setPage(1)
                 }}
-                className="h-11 w-full rounded-xl border border-[#E5E7EB] bg-white px-3 text-sm font-semibold text-[#111827] outline-none focus:border-[#C8102E] md:max-w-[220px]"
+                className="h-11 w-full rounded-xl border border-[#E5E7EB] bg-white px-3 text-sm font-semibold text-[#111827] outline-none focus:border-[#C8102E] md:max-w-55"
               >
                 <option value="">Blood Group (All)</option>
                 <option value="A+">A+</option>
@@ -162,7 +165,7 @@ export default function AllRequests() {
           <div className="space-y-5">
             <div className="rounded-2xl border border-[#E5E7EB] bg-white shadow-sm">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[980px]">
+                <table className="w-full min-w-245">
                   <thead>
                     <tr className="bg-[#F9FAFB] text-left text-xs font-semibold text-[#6B7280]">
                       <th className="px-6 py-3">HOSPITAL</th>
@@ -190,13 +193,34 @@ export default function AllRequests() {
                             <StatusBadge status={r.status} withDot />
                           </td>
                           <td className="px-6 py-4 text-[#6B7280] font-semibold">{formatDateTime(r.created_at)}</td>
-                          <td className="px-6 py-4">
+                          <td className="px-6 py-4 flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedRequest(r)}
+                              className="rounded-xl bg-[#F9FAFB] px-4 py-2 text-sm font-semibold text-[#111827] ring-1 ring-[#E5E7EB] hover:bg-white"
+                            >
+                              View
+                            </button>
                             <button
                               type="button"
                               disabled={disabled}
-                              className="rounded-xl bg-[#F9FAFB] px-4 py-2 text-sm font-semibold text-[#111827] ring-1 ring-[#E5E7EB] disabled:cursor-not-allowed disabled:opacity-50"
+                              onClick={async () => {
+                                try {
+                                  await adminCancelRequest(r.id)
+                                  const refreshed = await adminAllRequests(query)
+                                  setData(refreshed)
+                                  window.dispatchEvent(new CustomEvent('app:toast', {
+                                    detail: { type: 'success', message: 'Request cancelled.' }
+                                  }))
+                                } catch {
+                                  window.dispatchEvent(new CustomEvent('app:toast', {
+                                    detail: { type: 'error', message: 'Failed to cancel request.' }
+                                  }))
+                                }
+                              }}
+                              className="rounded-xl bg-[#F9FAFB] px-4 py-2 text-sm font-semibold text-[#111827] ring-1 ring-[#E5E7EB] disabled:cursor-not-allowed disabled:opacity-50 hover:bg-white"
                             >
-                              CANCEL
+                              Cancel
                             </button>
                           </td>
                         </tr>
@@ -232,6 +256,18 @@ export default function AllRequests() {
             </div>
           </div>
         ) : null}
+        {selectedRequest && (
+          <RequestDetailModal
+            request={selectedRequest}
+            onClose={() => setSelectedRequest(null)}
+            onUpdated={() => {
+              setSelectedRequest(null)
+              adminAllRequests(query).then(setData)
+            }}
+            viewerRole="admin"
+            isOwnRequest={false}
+          />
+        )}
       </div>
     </PageLayout>
   )

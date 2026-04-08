@@ -49,3 +49,18 @@ export async function adminAllRequests({
   return res.data
 }
 
+
+export async function fulfillRequest(requestId) {
+  const res = await api.post(`/blood-requests/${requestId}/fulfil`)
+  return res.data
+}
+
+export async function getRequestById(requestId) {
+  const res = await api.get(`/blood-requests/${requestId}`)
+  return res.data
+}
+
+export async function adminCancelRequest(requestId) {
+  const res = await api.post(`/blood-requests/admin/${requestId}/cancel`)
+  return res.data
+}

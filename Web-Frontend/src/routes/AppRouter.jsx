@@ -5,6 +5,7 @@ import LoadingSpinner from '../components/LoadingSpinner.jsx'
 import ToastHost from '../components/ToastHost.jsx'
 
 import Login from '../pages/Login.jsx'
+import Register from '../pages/register.jsx'
 
 import HospitalDashboard from '../pages/hospital/Dashboard.jsx'
 import HospitalMyRequests from '../pages/hospital/MyRequests.jsx'
@@ -15,6 +16,7 @@ import AdminDashboard from '../pages/admin/Dashboard.jsx'
 import AdminAllRequests from '../pages/admin/AllRequests.jsx'
 import AdminHospitals from '../pages/admin/Hospitals.jsx'
 import AdminDonors from '../pages/admin/Donors.jsx'
+
 
 function AuthGate({ children }) {
   const { user, loading } = useAuth()
@@ -53,6 +55,8 @@ export default function AppRouter() {
       <Routes>
         <Route path="/" element={<RoleHomeRedirect />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+
 
         <Route
           path="/hospital/dashboard"

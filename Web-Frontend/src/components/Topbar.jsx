@@ -54,12 +54,6 @@ export default function Topbar() {
     <header className="flex items-center justify-between border-b border-[#E5E7EB] bg-white px-6 py-4">
       <div className="flex items-center gap-3">
         <div className="text-lg font-bold text-[#111827]">{displayName}</div>
-        {role === 'hospital' ? (
-          <span className="inline-flex items-center gap-2 rounded-full bg-[#EFF6FF] px-3 py-1 text-xs font-semibold text-[#1D4ED8]">
-            <span className="h-2 w-2 rounded-full bg-[#1D4ED8]" />
-            Verified
-          </span>
-        ) : null}
       </div>
 
       <div className="flex items-center gap-3">

@@ -1,22 +1,21 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import PageLayout from '../../components/PageLayout.jsx'
 import BloodBadge from '../../components/BloodBadge.jsx'
 import StatusBadge from '../../components/StatusBadge.jsx'
 import UrgencyBadge from '../../components/UrgencyBadge.jsx'
 import Pagination from '../../components/Pagination.jsx'
 import LoadingSpinner from '../../components/LoadingSpinner.jsx'
-import { getMyRequests } from '../../api/requests'
+import RequestDetailModal from '../../components/RequestDetailModal.jsx'
+import { getBloodRequests } from '../../api/requests'
 import { formatDateTime } from '../../utils/helpers'
 import { useWebSocket } from '../../hooks/useWebSockets.js'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { useCallback } from 'react'
 
-function StatCard({ title, value, sub }) {
+function StatCard({ title, value }) {
   return (
     <div className="rounded-2xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
       <div className="text-xs font-semibold tracking-[0.18em] text-[#6B7280]">{title}</div>
       <div className="mt-2 text-3xl font-extrabold text-[#111827]">{value}</div>
-      <div className="mt-1 text-sm font-semibold text-[#6B7280]">{sub}</div>
     </div>
   )
 }
@@ -26,28 +25,22 @@ export default function Dashboard() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [selectedRequest, setSelectedRequest] = useState(null)
 
   const { profile } = useAuth()
- 
-  // ── WebSocket ────────────────────────────────────────────────────────────
   const room = profile?.id ? `hospital_${profile.id}` : null
 
   const handleWsEvent = useCallback((event) => {
-    console.log('[WS EVENT]', event)
     const messages = {
       REQUEST_ACCEPTED:  `✅ Donor assigned: ${event.payload?.donor_name}`,
       REQUEST_FULFILLED: `💉 Donation fulfilled — thank you!`,
     }
-
     const message = messages[event.type]
     if (message) {
-      window.dispatchEvent(
-        new CustomEvent('app:toast', {
-          detail: { type: 'success', message },
-        })
-      )
+      window.dispatchEvent(new CustomEvent('app:toast', {
+        detail: { type: 'success', message },
+      }))
     }
-
     if (['REQUEST_ACCEPTED', 'REQUEST_FULFILLED'].includes(event.type)) {
       setPage(1)
     }
@@ -55,66 +48,35 @@ export default function Dashboard() {
 
   useWebSocket(room, handleWsEvent)
 
+  function fetchData(p = page) {
+    setLoading(true)
+    setError(null)
+    // Fetch ALL requests (public endpoint — no auth filter)
+    getBloodRequests({ page: p, pageSize: 10 })
+      .then(setData)
+      .catch(setError)
+      .finally(() => setLoading(false))
+  }
 
   useEffect(() => {
     let alive = true
     setLoading(true)
     setError(null)
 
-    getMyRequests({ page, pageSize: 10 })
-      .then((d) => {
-        if (!alive) return
-        setData(d)
-      })
-      .catch((e) => {
-        if (!alive) return
-        setError(e)
-      })
-      .finally(() => {
-        if (!alive) return
-        setLoading(false)
-      })
+    getBloodRequests({ page, pageSize: 10 })
+      .then((d) => { if (alive) setData(d) })
+      .catch((e) => { if (alive) setError(e) })
+      .finally(() => { if (alive) setLoading(false) })
 
-    return () => {
-      alive = false
-    }
+    return () => { alive = false }
   }, [page])
 
   const stats = useMemo(() => {
     const items = data?.items || []
-    const active = items.filter((r) => String(r.status || '').toUpperCase() === 'OPEN').length
+    const open = items.filter((r) => String(r.status || '').toUpperCase() === 'OPEN').length
+    const accepted = items.filter((r) => String(r.status || '').toUpperCase() === 'ACCEPTED').length
     const fulfilled = items.filter((r) => String(r.status || '').toUpperCase() === 'FULFILLED').length
-    const pending = items.filter((r) => String(r.status || '').toUpperCase() === 'ACCEPTED').length
-    const total = items.length
-
-    const today = new Date()
-    const isToday = (value) => {
-      const d = new Date(value)
-      if (Number.isNaN(d.getTime())) return false
-      return (
-        d.getFullYear() === today.getFullYear() &&
-        d.getMonth() === today.getMonth() &&
-        d.getDate() === today.getDate()
-      )
-    }
-
-    const createdToday = items.filter((r) => isToday(r.created_at)).length
-    const fulfilledRate = total === 0 ? 0 : Math.round((fulfilled / total) * 100)
-
-    const openCreatedAts = items
-      .filter((r) => String(r.status || '').toUpperCase() === 'OPEN')
-      .map((r) => new Date(r.created_at))
-      .filter((d) => !Number.isNaN(d.getTime()))
-
-    const avgMinutes =
-      openCreatedAts.length === 0
-        ? 0
-        : Math.round(
-            openCreatedAts.reduce((sum, d) => sum + (Date.now() - d.getTime()) / 60000, 0) /
-              openCreatedAts.length,
-          )
-
-    return { active, fulfilled, pending, createdToday, fulfilledRate, avgMinutes }
+    return { open, accepted, fulfilled }
   }, [data])
 
   return (
@@ -129,21 +91,22 @@ export default function Dashboard() {
       {!loading && !error ? (
         <div className="space-y-6">
           <div className="grid gap-4 md:grid-cols-3">
-            <StatCard title="ACTIVE REQUESTS" value={stats.active}/>
+            <StatCard title="OPEN REQUESTS" value={stats.open} />
+            <StatCard title="ACCEPTED" value={stats.accepted} />
             <StatCard title="FULFILLED" value={stats.fulfilled} />
-            <StatCard title="PENDING" value={stats.pending} />
           </div>
 
           <div className="rounded-2xl border border-[#E5E7EB] bg-white shadow-sm">
             <div className="border-b border-[#E5E7EB] px-6 py-4">
-              <div className="text-sm font-bold text-[#111827]">Blood Requests</div>
+              <div className="text-sm font-bold text-[#111827]">All Blood Requests</div>
+              <div className="text-xs font-semibold text-[#6B7280] mt-0.5">Live feed from all hospitals</div>
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-225">
+              <table className="w-full min-w-200">
                 <thead>
                   <tr className="bg-[#F9FAFB] text-left text-xs font-semibold text-[#6B7280]">
-                    <th className="px-6 py-3">REQUEST ID</th>
+                    <th className="px-6 py-3">HOSPITAL</th>
                     <th className="px-6 py-3">GROUP</th>
                     <th className="px-6 py-3">UNITS</th>
                     <th className="px-6 py-3">PATIENT / URGENCY</th>
@@ -153,19 +116,17 @@ export default function Dashboard() {
                 </thead>
                 <tbody className="divide-y divide-[#E5E7EB]">
                   {(data?.items || []).map((r) => (
-                    <tr key={r.id || r.request_id} className="text-sm text-[#111827]">
-                      <td className="px-6 py-4 font-semibold text-[#111827]">
-                        {r.request_id || r.id || '-'}
-                      </td>
+                    <tr key={r.id} className="text-sm text-[#111827]">
+                      <td className="px-6 py-4 font-semibold">{r.hospital_name || '-'}</td>
                       <td className="px-6 py-4">
-                        <BloodBadge group={r.blood_group || r.group} />
+                        <BloodBadge group={r.blood_group} />
                       </td>
-                      <td className="px-6 py-4 font-semibold">{r.units || r.units_needed || '-'}</td>
+                      <td className="px-6 py-4 font-semibold">{r.units_needed || '-'}</td>
                       <td className="px-6 py-4">
                         <div className="flex flex-col gap-1">
-                          <div className="font-semibold">{r.patient_name || r.patient || '-'}</div>
+                          <div className="font-semibold">{r.patient_name || '-'}</div>
                           <div className="flex items-center gap-2">
-                            <UrgencyBadge level={r.urgency || r.urgency_level} />
+                            <UrgencyBadge level={r.urgency} />
                             <span className="text-xs font-semibold text-[#6B7280]">
                               {formatDateTime(r.created_at)}
                             </span>
@@ -176,8 +137,10 @@ export default function Dashboard() {
                         <StatusBadge status={r.status} />
                       </td>
                       <td className="px-6 py-4">
+                        {/* View only — no actions from dashboard */}
                         <button
                           type="button"
+                          onClick={() => setSelectedRequest(r)}
                           className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm font-semibold text-[#111827] hover:bg-[#F7F7F7]"
                         >
                           View
@@ -200,7 +163,16 @@ export default function Dashboard() {
           </div>
         </div>
       ) : null}
+
+      {/* View-only modal — no cancel, no fulfill */}
+      {selectedRequest && (
+        <RequestDetailModal
+          request={selectedRequest}
+          onClose={() => setSelectedRequest(null)}
+          showCancel={false}
+          showAdminCancel={false}
+        />
+      )}
     </PageLayout>
   )
 }
-
