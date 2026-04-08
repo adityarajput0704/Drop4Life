@@ -1,3 +1,4 @@
+from dns import query
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -161,6 +162,44 @@ def cancel_blood_request(
 
 
 # ── DONOR ─────────────────────────────────────────────────────────────────────
+# backend/routers/blood_requests.py
+# Add BEFORE the GET "/" route
+
+@router.post("/{request_id}/cancel-acceptance", response_model=BloodRequestResponse)
+def cancel_my_acceptance(
+    request_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Donor cancels their own acceptance — returns request to OPEN."""
+    donor = db.query(Donor).filter(Donor.user_id == current_user.id).first()
+    if not donor:
+        raise HTTPException(status_code=403, detail="Only donors can cancel acceptance.")
+
+    blood_request = db.query(BloodRequest).filter(
+        BloodRequest.id == request_id
+    ).first()
+    if not blood_request:
+        raise HTTPException(status_code=404, detail="Request not found.")
+
+    # Only the assigned donor can cancel
+    if blood_request.donor_id != donor.id:
+        raise HTTPException(status_code=403, detail="You are not the assigned donor.")
+
+    # Can only cancel if ACCEPTED — not if already FULFILLED
+    if blood_request.status != RequestStatusEnum.ACCEPTED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot cancel — request is {blood_request.status.value}.",
+        )
+
+    blood_request.donor_id = None
+    blood_request.status = RequestStatusEnum.OPEN
+    db.commit()
+    db.refresh(blood_request)
+    invalidate_cache("blood_requests:*")
+
+    return build_request_response(blood_request)
 
 @router.get("/matching", response_model=BloodRequestListResponse)
 def get_matching_requests(
@@ -440,7 +479,6 @@ def list_blood_requests(
         return cached
 
     query = db.query(BloodRequest)
-
     if filters.blood_group:
         query = query.filter(BloodRequest.blood_group == filters.blood_group)
 
@@ -458,7 +496,7 @@ def list_blood_requests(
         query = query.filter(BloodRequest.units_needed >= filters.units_needed_min)
 
     total = query.count()
-    blood_requests = query.offset(pagination.offset).limit(pagination.page_size).all()
+    blood_requests = query.order_by(BloodRequest.created_at.desc()).offset(pagination.offset).limit(pagination.page_size).all()
 
     result = PagedResponse.create(
         items=[build_request_response(r) for r in blood_requests],

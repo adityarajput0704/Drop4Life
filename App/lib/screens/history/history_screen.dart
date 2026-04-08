@@ -7,6 +7,7 @@ import '../../widgets/bottom_nav.dart';
 import '../../widgets/status_badge.dart';
 import '../../widgets/blood_badge.dart';
 import '../../widgets/loading_spinner.dart';
+import 'package:go_router/go_router.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -29,11 +30,20 @@ class _HistoryScreenState extends State<HistoryScreen> {
     if (totalDonations >= 20) {
       return {'title': 'Platinum Donor', 'next': 'MAX LEVEL REACHED'};
     } else if (totalDonations >= 10) {
-      return {'title': 'Gold Donor', 'next': '${20 - totalDonations} MORE TO PLATINUM'};
+      return {
+        'title': 'Gold Donor',
+        'next': '${20 - totalDonations} MORE TO PLATINUM'
+      };
     } else if (totalDonations >= 5) {
-      return {'title': 'Silver Donor', 'next': '${10 - totalDonations} MORE TO GOLD'};
+      return {
+        'title': 'Silver Donor',
+        'next': '${10 - totalDonations} MORE TO GOLD'
+      };
     } else {
-      return {'title': 'Bronze Donor', 'next': '${5 - totalDonations} MORE TO SILVER'};
+      return {
+        'title': 'Bronze Donor',
+        'next': '${5 - totalDonations} MORE TO SILVER'
+      };
     }
   }
 
@@ -54,11 +64,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
         leading: const Icon(Icons.water_drop, color: AppTheme.primaryRed),
         title: const Text(
           'Drop4life',
-          style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryRed),
+          style: TextStyle(
+              fontWeight: FontWeight.bold, color: AppTheme.primaryRed),
         ),
         centerTitle: false,
         actions: [
-          IconButton(icon: const Icon(Icons.notifications_none), onPressed: () {}),
+          IconButton(
+              icon: const Icon(Icons.notifications_none), onPressed: () {}),
         ],
       ),
       body: requestProvider.isLoading
@@ -170,12 +182,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       children: [
                         const Text(
                           'History',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold),
                         ),
                         FilterChip(
                           label: const Text(
                             'ALL TIME',
-                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                                fontSize: 10, fontWeight: FontWeight.bold),
                           ),
                           onSelected: (val) {},
                           backgroundColor: AppTheme.surfaceCard,
@@ -213,7 +227,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 children: [
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         StatusBadge(status: h.status),
                                         const SizedBox(height: 8),
@@ -242,7 +257,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                             ),
                                           ],
                                         ),
-                                        if (h.status.toUpperCase() == 'CANCELLED' &&
+                                        if (h.status.toUpperCase() ==
+                                                'CANCELLED' &&
                                             h.cancellationReason != null) ...[
                                           const SizedBox(height: 8),
                                           Text(
@@ -256,15 +272,19 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                         ],
                                         const SizedBox(height: 16),
                                         TextButton(
-                                          onPressed: () {},
+                                          onPressed: () {
+                                            context.push('/request/${h.id}',
+                                                extra: h);
+                                          },
                                           style: TextButton.styleFrom(
                                             padding: EdgeInsets.zero,
                                             minimumSize: const Size(50, 20),
-                                            tapTargetSize:
-                                                MaterialTapTargetSize.shrinkWrap,
+                                            tapTargetSize: MaterialTapTargetSize
+                                                .shrinkWrap,
                                           ),
                                           child: Text(
-                                            h.status.toUpperCase() == 'FULFILLED'
+                                            h.status.toUpperCase() ==
+                                                    'FULFILLED'
                                                 ? 'View Receipt ›'
                                                 : 'View Details ›',
                                             style: const TextStyle(
@@ -297,8 +317,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   String _month(int m) {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     return months[m - 1];
   }

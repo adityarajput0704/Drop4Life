@@ -4,15 +4,15 @@ import '../models/blood_request.dart';
 
 class RequestProvider extends ChangeNotifier {
   final RequestService _requestService = RequestService();
-  
+
   List<BloodRequest> _requests = [];
   List<BloodRequest> _urgentRequests = [];
   List<BloodRequest> _history = [];
-  
+
   bool _isLoading = false;
   bool _isLoadingMore = false;
   String? _error;
-  
+  String _currentSearch = '';
   int _currentPage = 1;
   bool _hasNextPage = true;
   String _currentFilter = 'ALL';
@@ -25,13 +25,19 @@ class RequestProvider extends ChangeNotifier {
   String? get error => _error;
   bool get hasNextPage => _hasNextPage;
   String get currentFilter => _currentFilter;
+  String get currentSearch => _currentSearch;
 
-  Future<void> fetchRequests({bool refresh = false, String filter = 'ALL'}) async {
+  Future<void> fetchRequests({
+    bool refresh = false,
+    String filter = 'ALL',
+    String search = '',
+  }) async {
     if (refresh) {
       _currentPage = 1;
       _hasNextPage = true;
       _requests.clear();
       _currentFilter = filter;
+      _currentSearch = search;
       _isLoading = true;
       _error = null;
       notifyListeners();
@@ -46,19 +52,24 @@ class RequestProvider extends ChangeNotifier {
       if (_currentFilter != 'ALL') {
         filters['urgency'] = _currentFilter;
       }
-      
-      final response = await _requestService.getBloodRequests(_currentPage, filters);
-      
+      if (_currentSearch.isNotEmpty) {
+        filters['city'] = _currentSearch;
+      }
+
+      final response =
+          await _requestService.getBloodRequests(_currentPage, filters);
+
       if (refresh) {
         _requests = response.items;
       } else {
         _requests.addAll(response.items);
       }
-      
+
       _hasNextPage = response.hasNext;
       _currentPage++;
     } catch (e) {
       _error = e.toString();
+      debugPrint('fetchRequests error: $e');
     } finally {
       if (refresh) {
         _isLoading = false;
@@ -103,6 +114,17 @@ class RequestProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> cancelAcceptance(String requestId) async {
+    try {
+      await _requestService.cancelAcceptance(requestId);
+      await fetchHistory(); // refresh history after cancel
+      return true;
+    } catch (e) {
+      debugPrint('cancelAcceptance error: $e');
       return false;
     }
   }

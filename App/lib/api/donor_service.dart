@@ -14,16 +14,22 @@ class DonorService {
     return Donor.fromJson(response.data);
   }
 
+
   Future<Donor> updateMyProfile(Map<String, dynamic> data) async {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(seconds: 1));
-      // In mock mode, simply return the updated donor. Real updates handled by Provider
       return MockData.currentDonor.copyWith(
         fullName: data['full_name'],
         city: data['city'],
         age: data['age'],
-        isAvailable: data['is_available'],
+        isAvailable: data['availability'] == 'available',
       );
+    }
+
+  // Convert Flutter bool → backend availability string
+    if (data.containsKey('is_available')) {
+      data['availability'] = data['is_available'] ? 'available' : 'unavailable';
+      data.remove('is_available');
     }
 
     final response = await DioClient.instance.patch('/donors/me', data: data);

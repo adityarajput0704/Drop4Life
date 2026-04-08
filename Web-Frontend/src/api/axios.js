@@ -4,7 +4,7 @@ import { USE_MOCK } from '../config.js'
 
 function getApiBaseUrl() {
   const url = import.meta.env.VITE_API_URL
-  return url || 'http://localhost:8000'
+  return url || 'http://192.168.0.102:8000'
 }
 
 export const api = axios.create({

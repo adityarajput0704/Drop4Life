@@ -16,6 +16,7 @@ class RequestsScreen extends StatefulWidget {
 
 class _RequestsScreenState extends State<RequestsScreen> {
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
   final List<String> _filters = ['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 
   @override
@@ -24,9 +25,10 @@ class _RequestsScreenState extends State<RequestsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<RequestProvider>().fetchRequests(refresh: true);
     });
-    
+
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      if (_scrollController.position.pixels >=
+          _scrollController.position.maxScrollExtent - 200) {
         context.read<RequestProvider>().fetchRequests();
       }
     });
@@ -35,6 +37,7 @@ class _RequestsScreenState extends State<RequestsScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -45,10 +48,13 @@ class _RequestsScreenState extends State<RequestsScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: const Icon(Icons.water_drop, color: AppTheme.primaryRed),
-        title: const Text('Drop4life', style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryRed)),
+        title: const Text('Drop4life',
+            style: TextStyle(
+                fontWeight: FontWeight.bold, color: AppTheme.primaryRed)),
         centerTitle: false,
         actions: [
-          IconButton(icon: const Icon(Icons.notifications_none), onPressed: () {}),
+          IconButton(
+              icon: const Icon(Icons.notifications_none), onPressed: () {}),
           const Padding(
             padding: EdgeInsets.only(right: 16.0),
             child: CircleAvatar(
@@ -62,11 +68,14 @@ class _RequestsScreenState extends State<RequestsScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: TextField(
+              controller: _searchController,
               decoration: InputDecoration(
-                hintText: 'Search hospital or city...',
-                prefixIcon: const Icon(Icons.search, color: AppTheme.textSecondary),
+                hintText: 'Search by city...',
+                prefixIcon:
+                    const Icon(Icons.search, color: AppTheme.textSecondary),
                 filled: true,
                 fillColor: AppTheme.surfaceCard,
                 border: OutlineInputBorder(
@@ -74,7 +83,28 @@ class _RequestsScreenState extends State<RequestsScreen> {
                   borderSide: BorderSide.none,
                 ),
                 contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () {
+                          _searchController.clear();
+                          context.read<RequestProvider>().fetchRequests(
+                                refresh: true,
+                                filter: context
+                                    .read<RequestProvider>()
+                                    .currentFilter,
+                              );
+                        },
+                      )
+                    : null,
               ),
+              onSubmitted: (value) {
+                context.read<RequestProvider>().fetchRequests(
+                      refresh: true,
+                      filter: context.read<RequestProvider>().currentFilter,
+                      search: value.trim(),
+                    );
+              },
             ),
           ),
           SizedBox(
@@ -90,7 +120,10 @@ class _RequestsScreenState extends State<RequestsScreen> {
                   padding: const EdgeInsets.only(right: 8.0),
                   child: FilterChip(
                     label: Text(
-                      _filters[index] == 'ALL' ? 'All' : _filters[index][0] + _filters[index].substring(1).toLowerCase(),
+                      _filters[index] == 'ALL'
+                          ? 'All'
+                          : _filters[index][0] +
+                              _filters[index].substring(1).toLowerCase(),
                       style: TextStyle(
                         color: isSelected ? Colors.white : AppTheme.textPrimary,
                         fontWeight: FontWeight.bold,
@@ -98,7 +131,9 @@ class _RequestsScreenState extends State<RequestsScreen> {
                     ),
                     selected: isSelected,
                     onSelected: (val) {
-                      context.read<RequestProvider>().fetchRequests(refresh: true, filter: filter);
+                      context
+                          .read<RequestProvider>()
+                          .fetchRequests(refresh: true, filter: filter);
                     },
                     backgroundColor: AppTheme.surfaceCard,
                     selectedColor: AppTheme.primaryRed,
@@ -113,7 +148,8 @@ class _RequestsScreenState extends State<RequestsScreen> {
           ),
           Expanded(
             child: RefreshIndicator(
-              onRefresh: () => context.read<RequestProvider>().fetchRequests(refresh: true, filter: requestProvider.currentFilter),
+              onRefresh: () => context.read<RequestProvider>().fetchRequests(
+                  refresh: true, filter: requestProvider.currentFilter),
               color: AppTheme.primaryRed,
               child: requestProvider.isLoading
                   ? const LoadingSpinner()
@@ -121,13 +157,17 @@ class _RequestsScreenState extends State<RequestsScreen> {
                       ? ListView(
                           children: const [
                             SizedBox(height: 100),
-                            Center(child: Text('No requests found.', style: TextStyle(color: AppTheme.textSecondary))),
+                            Center(
+                                child: Text('No requests found.',
+                                    style: TextStyle(
+                                        color: AppTheme.textSecondary))),
                           ],
                         )
                       : ListView.builder(
                           controller: _scrollController,
                           padding: const EdgeInsets.all(16.0),
-                          itemCount: requestProvider.requests.length + (requestProvider.isLoadingMore ? 1 : 0),
+                          itemCount: requestProvider.requests.length +
+                              (requestProvider.isLoadingMore ? 1 : 0),
                           itemBuilder: (context, index) {
                             if (index == requestProvider.requests.length) {
                               return const Padding(
@@ -135,9 +175,15 @@ class _RequestsScreenState extends State<RequestsScreen> {
                                 child: Center(
                                   child: Column(
                                     children: [
-                                      CircularProgressIndicator(valueColor: AlwaysStoppedAnimation(AppTheme.primaryRed)),
+                                      CircularProgressIndicator(
+                                          valueColor: AlwaysStoppedAnimation(
+                                              AppTheme.primaryRed)),
                                       SizedBox(height: 8),
-                                      Text('LOADING MORE REQUESTS', style: TextStyle(fontSize: 10, color: AppTheme.textSecondary, fontWeight: FontWeight.bold)),
+                                      Text('LOADING MORE REQUESTS',
+                                          style: TextStyle(
+                                              fontSize: 10,
+                                              color: AppTheme.textSecondary,
+                                              fontWeight: FontWeight.bold)),
                                     ],
                                   ),
                                 ),
@@ -147,8 +193,10 @@ class _RequestsScreenState extends State<RequestsScreen> {
                             return RequestCard(
                               request: req,
                               buttonText: 'Accept',
-                              onTap: () => context.push('/request/${req.id}', extra: req),
-                              onAccept: () => context.push('/request/${req.id}', extra: req),
+                              onTap: () => context.push('/request/${req.id}',
+                                  extra: req),
+                              onAccept: () => context.push('/request/${req.id}',
+                                  extra: req),
                             );
                           },
                         ),

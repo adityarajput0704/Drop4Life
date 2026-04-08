@@ -1,3 +1,5 @@
+// lib/widgets/request_card.dart — FULL REPLACEMENT
+
 import 'package:flutter/material.dart';
 import '../models/blood_request.dart';
 import '../config/app_theme.dart';
@@ -44,7 +46,7 @@ class RequestCard extends StatelessWidget {
                           children: [
                             Expanded(
                               child: Text(
-                                request.hospitalName,
+                                request.patientName, // ← patient name as title
                                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -56,12 +58,30 @@ class RequestCard extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 4),
+                        // Hospital name as subtitle
+                        Row(
+                          children: [
+                            const Icon(Icons.local_hospital_outlined, size: 14, color: AppTheme.textSecondary),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                request.hospitalName,
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: AppTheme.textSecondary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
                         Row(
                           children: [
                             const Icon(Icons.location_on_outlined, size: 14, color: AppTheme.textSecondary),
                             const SizedBox(width: 4),
                             Text(
-                              '${request.city} • ${request.distance} km',
+                              request.city,
                               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: AppTheme.textSecondary,
                               ),
@@ -94,7 +114,7 @@ class RequestCard extends StatelessWidget {
                   child: ElevatedButton(
                     onPressed: onAccept,
                     style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal:28, vertical:8),
+                      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 8),
                       minimumSize: const Size(0, 36),
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       shape: RoundedRectangleBorder(

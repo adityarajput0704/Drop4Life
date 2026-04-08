@@ -2,6 +2,7 @@ import 'dio_client.dart';
 import '../models/blood_request.dart';
 import '../config/app_config.dart';
 import '../mock/mock_data.dart';
+import 'package:dio/dio.dart';
 
 class RequestResponse {
   final List<BloodRequest> items;
@@ -24,7 +25,8 @@ class RequestResponse {
 
   factory RequestResponse.fromJson(Map<String, dynamic> json) {
     return RequestResponse(
-      items: (json['items'] as List).map((i) => BloodRequest.fromJson(i)).toList(),
+      items:
+          (json['items'] as List).map((i) => BloodRequest.fromJson(i)).toList(),
       total: json['total'],
       page: json['page'],
       pageSize: json['page_size'],
@@ -36,15 +38,17 @@ class RequestResponse {
 }
 
 class RequestService {
-  Future<RequestResponse> getBloodRequests(int page, Map<String, dynamic> filters) async {
+  Future<RequestResponse> getBloodRequests(
+    int page,
+    Map<String, dynamic> filters,
+  ) async {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(seconds: 1));
-      
       List<BloodRequest> filtered = MockData.activeRequests;
       if (filters.containsKey('urgency') && filters['urgency'] != 'ALL') {
-             filtered = filtered.where((r) => r.urgency == filters['urgency']).toList();
+        filtered =
+            filtered.where((r) => r.urgency == filters['urgency']).toList();
       }
-
       return RequestResponse(
         items: filtered,
         total: filtered.length,
@@ -55,22 +59,41 @@ class RequestService {
         hasPrevious: false,
       );
     }
-    
-    final response = await DioClient.instance.get('/blood-requests/', queryParameters: {
-      'page': page,
-      ...filters,
-    });
+
+    final queryParams = <String, dynamic>{'page': page};
+    queryParams['status'] = 'open';
+
+    if (filters.containsKey('urgency') && filters['urgency'] != 'ALL') {
+      queryParams['urgency'] = (filters['urgency'] as String).toLowerCase();
+    }
+
+    // Search by city
+    if (filters.containsKey('city') && (filters['city'] as String).isNotEmpty) {
+      queryParams['city'] = filters['city'];
+    }
+
+    final response = await DioClient.instance.get(
+      '/blood-requests/',
+      queryParameters: queryParams,
+    );
     return RequestResponse.fromJson(response.data);
   }
 
   Future<List<BloodRequest>> getMatchingRequests() async {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(seconds: 1));
-      return MockData.activeRequests.take(4).toList(); // Return a few mock active requests
+      return MockData.activeRequests.take(4).toList();
     }
-
-    final response = await DioClient.instance.get('/blood-requests/matching');
-    return (response.data['items'] as List).map((i) => BloodRequest.fromJson(i)).toList();
+    try {
+      final response = await DioClient.instance.get('/blood-requests/matching');
+      return (response.data['items'] as List)
+          .map((i) => BloodRequest.fromJson(i))
+          .toList();
+    } on DioException catch (e) {
+      // 403 = user is not a donor yet — return empty list silently
+      if (e.response?.statusCode == 403) return [];
+      rethrow;
+    }
   }
 
   Future<void> acceptRequest(String requestId) async {
@@ -82,6 +105,10 @@ class RequestService {
     await DioClient.instance.post('/blood-requests/$requestId/accept');
   }
 
+  Future<void> cancelAcceptance(String requestId) async {
+    await DioClient.instance
+        .post('/blood-requests/$requestId/cancel-acceptance');
+  }
 
   Future<RequestResponse> getMyHistory(int page) async {
     if (AppConfig.useMockData) {
@@ -96,11 +123,11 @@ class RequestService {
         hasPrevious: false,
       );
     }
-  // Fetches requests where the current donor is the assigned donor
+    // Fetches requests where the current donor is the assigned donor
     final response = await DioClient.instance.get(
-      '/blood-requests/my-donations',  // ← we confirm this after your grep
+      '/blood-requests/my-donations', // ← we confirm this after your grep
       queryParameters: {'page': page},
-  );
-   return RequestResponse.fromJson(response.data);
+    );
+    return RequestResponse.fromJson(response.data);
   }
 }

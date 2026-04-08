@@ -42,7 +42,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(width: 8),
             Text(
-              donor != null ? 'Hello, ${donor.fullName.split(' ').first} 🌟' : 'Hello 🌟',
+              donor != null
+                  ? 'Hello, ${donor.fullName.split(' ').first} 🌟'
+                  : 'Hello 🌟',
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
           ],
@@ -80,16 +82,24 @@ class _HomeScreenState extends State<HomeScreen> {
                           const Positioned(
                             right: -20,
                             top: -20,
-                            child: Icon(Icons.water_drop, size: 120, color: Colors.white10),
+                            child: Icon(Icons.water_drop,
+                                size: 120, color: Colors.white10),
                           ),
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('YOUR BLOOD GROUP', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 12)),
+                              const Text('YOUR BLOOD GROUP',
+                                  style: TextStyle(
+                                      color: Colors.white70,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12)),
                               const SizedBox(height: 8),
                               Text(
                                 donor?.bloodGroup ?? '--',
-                                style: const TextStyle(color: Colors.white, fontSize: 48, fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 48,
+                                    fontWeight: FontWeight.bold),
                               ),
                             ],
                           ),
@@ -97,7 +107,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    
+
                     // Status Row
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -105,24 +115,39 @@ class _HomeScreenState extends State<HomeScreen> {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Status', style: TextStyle(fontWeight: FontWeight.bold)),
-                            const Text('Ready to save a life today?', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                            const Text('Status',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
+                            const Text('Ready to save a life today?',
+                                style: TextStyle(
+                                    color: AppTheme.textSecondary,
+                                    fontSize: 12)),
                             const SizedBox(height: 8),
                             if (donor != null)
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: donor.isAvailable ? AppTheme.availableBg : AppTheme.unavailableBg,
+                                  color: donor.isAvailable
+                                      ? AppTheme.availableBg
+                                      : AppTheme.unavailableBg,
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: Row(
                                   children: [
-                                    Icon(Icons.circle, size: 8, color: donor.isAvailable ? AppTheme.availableText : AppTheme.unavailableText),
+                                    Icon(Icons.circle,
+                                        size: 8,
+                                        color: donor.isAvailable
+                                            ? AppTheme.availableText
+                                            : AppTheme.unavailableText),
                                     const SizedBox(width: 6),
                                     Text(
-                                      donor.isAvailable ? 'Available to Donate' : 'Unavailable',
+                                      donor.isAvailable
+                                          ? 'Available to Donate'
+                                          : 'Unavailable',
                                       style: TextStyle(
-                                        color: donor.isAvailable ? AppTheme.availableText : AppTheme.unavailableText,
+                                        color: donor.isAvailable
+                                            ? AppTheme.availableText
+                                            : AppTheme.unavailableText,
                                         fontWeight: FontWeight.bold,
                                         fontSize: 12,
                                       ),
@@ -137,7 +162,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           activeThumbColor: AppTheme.primaryRed,
                           onChanged: (val) {
                             if (donor != null) {
-                              context.read<DonorProvider>().updateProfile({'is_available': val});
+                              context.read<DonorProvider>().updateProfile({
+                                'availability': val
+                                    ? 'available'
+                                    : 'unavailable', // ← correct field
+                              });
                             }
                           },
                         ),
@@ -155,8 +184,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
-                          _buildStatColumn('TOTAL', '${donor?.totalDonations ?? 0} Donations'),
-                          _buildStatColumn('IMPACT', '${donor?.livesSaved ?? 0} Lives Saved'),
+                          _buildStatColumn('TOTAL',
+                              '${donor?.totalDonations ?? 0} Donations'),
+                          _buildStatColumn('IMPACT',
+                              '${donor?.livesSaved ?? 0} Lives Saved'),
                           _buildStatColumn(
                             'LAST',
                             donor?.lastDonation != null
@@ -175,13 +206,21 @@ class _HomeScreenState extends State<HomeScreen> {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Urgent Requests', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                            Text('Near ${donor?.city ?? "you"}', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                            const Text('Urgent Requests',
+                                style: TextStyle(
+                                    fontSize: 18, fontWeight: FontWeight.bold)),
+                            Text('Near ${donor?.city ?? "you"}',
+                                style: const TextStyle(
+                                    color: AppTheme.textSecondary,
+                                    fontSize: 12)),
                           ],
                         ),
                         TextButton(
                           onPressed: () => context.go('/requests'),
-                          child: const Text('View All', style: TextStyle(color: AppTheme.primaryRed, fontWeight: FontWeight.bold)),
+                          child: const Text('View All',
+                              style: TextStyle(
+                                  color: AppTheme.primaryRed,
+                                  fontWeight: FontWeight.bold)),
                         ),
                       ],
                     ),
@@ -189,24 +228,34 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     // Urgent Requests Horizontal List
                     if (requestProvider.urgentRequests.isEmpty)
-                      const Center(child: Padding(padding: EdgeInsets.all(24.0), child: Text('No urgent requests near you right now.', style: TextStyle(color: AppTheme.textSecondary))))
+                      const Center(
+                          child: Padding(
+                              padding: EdgeInsets.all(24.0),
+                              child: Text(
+                                  'No urgent requests near you right now.',
+                                  style: TextStyle(
+                                      color: AppTheme.textSecondary))))
                     else
                       LayoutBuilder(
                         builder: (context, constraints) {
                           final isMobile = constraints.maxWidth < 600;
-                          
+
                           if (isMobile) {
                             return ListView.separated(
                               shrinkWrap: true,
                               physics: const NeverScrollableScrollPhysics(),
                               itemCount: requestProvider.urgentRequests.length,
-                              separatorBuilder: (_, __) => const SizedBox(height: 16),
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 16),
                               itemBuilder: (context, index) {
-                                final req = requestProvider.urgentRequests[index];
+                                final req =
+                                    requestProvider.urgentRequests[index];
                                 return RequestCard(
                                   request: req,
-                                  onTap: () => context.push('/request/${req.id}', extra: req),
-                                  onAccept: () => context.push('/request/${req.id}', extra: req),
+                                  onTap: () => context
+                                      .push('/request/${req.id}', extra: req),
+                                  onAccept: () => context
+                                      .push('/request/${req.id}', extra: req),
                                 );
                               },
                             );
@@ -215,17 +264,23 @@ class _HomeScreenState extends State<HomeScreen> {
                               height: 190,
                               child: ListView.builder(
                                 scrollDirection: Axis.horizontal,
-                                itemCount: requestProvider.urgentRequests.length,
+                                itemCount:
+                                    requestProvider.urgentRequests.length,
                                 itemBuilder: (context, index) {
-                                  final req = requestProvider.urgentRequests[index];
+                                  final req =
+                                      requestProvider.urgentRequests[index];
                                   return SizedBox(
                                     width: 320,
                                     child: Padding(
                                       padding: const EdgeInsets.only(right: 16),
                                       child: RequestCard(
                                         request: req,
-                                        onTap: () => context.push('/request/${req.id}', extra: req),
-                                        onAccept: () => context.push('/request/${req.id}', extra: req),
+                                        onTap: () => context.push(
+                                            '/request/${req.id}',
+                                            extra: req),
+                                        onAccept: () => context.push(
+                                            '/request/${req.id}',
+                                            extra: req),
                                       ),
                                     ),
                                   );
@@ -246,15 +301,33 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildStatColumn(String label, String value) {
     return Column(
       children: [
-        Text(label, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
+        Text(label,
+            style: const TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 10,
+                fontWeight: FontWeight.bold)),
         const SizedBox(height: 4),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+        Text(value,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
       ],
     );
   }
 
   String _month(int m) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
     return months[m - 1];
   }
 }
