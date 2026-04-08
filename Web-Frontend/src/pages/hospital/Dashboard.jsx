@@ -129,14 +129,14 @@ export default function Dashboard() {
       {!loading && !error ? (
         <div className="space-y-6">
           <div className="grid gap-4 md:grid-cols-3">
-            <StatCard title="ACTIVE REQUESTS" value={stats.active} sub={`+${stats.createdToday} today`} />
-            <StatCard title="FULFILLED" value={stats.fulfilled} sub={`${stats.fulfilledRate}% rate`} />
-            <StatCard title="PENDING" value={stats.pending} sub={`Avg ${stats.avgMinutes}m`} />
+            <StatCard title="ACTIVE REQUESTS" value={stats.active}/>
+            <StatCard title="FULFILLED" value={stats.fulfilled} />
+            <StatCard title="PENDING" value={stats.pending} />
           </div>
 
           <div className="rounded-2xl border border-[#E5E7EB] bg-white shadow-sm">
             <div className="border-b border-[#E5E7EB] px-6 py-4">
-              <div className="text-sm font-bold text-[#111827]">Recent Blood Requests</div>
+              <div className="text-sm font-bold text-[#111827]">Blood Requests</div>
             </div>
 
             <div className="overflow-x-auto">

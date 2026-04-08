@@ -8,7 +8,7 @@ function Logo({ subtitle }) {
         <span className="text-lg font-bold">🩸</span>
       </div>
       <div className="leading-tight">
-        <div className="text-lg font-extrabold text-[#C8102E]">BloodLink</div>
+        <div className="text-lg font-extrabold text-[#C8102E]">Drop4Life</div>
         {subtitle ? <div className="text-xs font-semibold text-[#6B7280]">{subtitle}</div> : null}
       </div>
     </div>
@@ -63,7 +63,7 @@ export default function Sidebar() {
   const subtitle = role === 'admin' ? 'System Admin' : null
 
   return (
-    <aside className="flex h-screen w-[280px] flex-col border-r border-[#E5E7EB] bg-white">
+    <aside className="flex h-screen w-70 flex-col border-r border-[#E5E7EB] bg-white">
       <Logo subtitle={subtitle} />
 
       <nav className="flex-1 px-3">
