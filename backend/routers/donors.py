@@ -4,7 +4,7 @@ from backend.dependencies.__init__ import get_db
 from backend.models.donor import Donor
 from backend.models.user import User
 from backend.models.blood_requests import BloodRequest
-from backend.schemas.donor import DonorCreate, DonorUpdate, DonorResponse, DonorListResponse, DonorFilterParams
+from backend.schemas.donor import DonorCreate, DonorUpdate, DonorResponse, DonorFilterParams
 from backend.dependencies.auth import get_current_user
 from sqlalchemy import or_
 from backend.core.pagination import PaginationParams, PagedResponse
@@ -17,23 +17,39 @@ router = APIRouter(prefix="/donors", tags=["Donors"])
 def build_donor_response(donor: Donor) -> dict:
     """
     Merges donor + user fields into a single flat dict.
-    DonorResponse expects full_name, email, phone from the User side.
+    Computes total_donations and lives_saved from the donations relationship.
     """
+    # Count only fulfilled donations
+    fulfilled = [d for d in donor.donations if d.status == "fulfilled"]
+    total_donations = len(fulfilled)
+    # Each donation saves approximately 3 lives (standard medical estimate)
+    lives_saved = total_donations * 3
+
+    last_donation = None
+    if fulfilled:
+        last = max(fulfilled, key=lambda d: d.updated_at or d.created_at)
+        last_donation = (last.updated_at or last.created_at).isoformat()
+
     return {
-        "id":           donor.id,
-        "blood_group":  donor.blood_group,
-        "city":         donor.city,
-        "age":          donor.age,
-        "availability": donor.availability,
-        "is_active":    donor.is_active,
-        "full_name":    donor.user.full_name,
-        "email":        donor.user.email,
-        "phone":        donor.user.phone,
+        "id":               donor.id,
+        "blood_group":      donor.blood_group,
+        "city":             donor.city,
+        "age":              donor.age,
+        "availability":     donor.availability,
+        "is_active":        donor.is_active,
+        "full_name":        donor.user.full_name,
+        "email":            donor.user.email,
+        "phone":            donor.user.phone,
+        "total_donations":  total_donations,  
+        "lives_saved":      lives_saved,       
+        "last_donation":    last_donation,   
+
+
     }
 
 
 @router.post("/register", response_model=DonorResponse, status_code=status.HTTP_201_CREATED)
-# @limiter.limit("3/minute")
+@limiter.limit("3/minute")
 def register_donor(
     request:      Request,
     donor_data: DonorCreate,
@@ -106,7 +122,7 @@ def update_donor_profile(
 
 
 @router.get("/", response_model=PagedResponse[DonorResponse])
-# @limiter.limit("30/minute")
+@limiter.limit("30/minute")
 def list_donors(
     request:    Request,
     pagination: PaginationParams = Depends(),

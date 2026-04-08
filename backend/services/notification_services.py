@@ -42,6 +42,7 @@ def notify_request_created(
         )
 
         event = {
+            "event": "request_created",          # ← Flutter listens for "event" key
             "type": "REQUEST_CREATED",
             "payload": {
                 "request_id": request_id,
@@ -54,7 +55,7 @@ def notify_request_created(
 
         # Run async broadcast from sync background task
         asyncio.run(_broadcast("admin", event))
-
+        asyncio.run(_broadcast("donors", event))
     except Exception as e:
         logger.error(f"[REQUEST CREATED ERROR] request_id={request_id} | error={e}")
 
@@ -91,6 +92,7 @@ def notify_request_accepted(
 
         asyncio.run(_broadcast(f"hospital_{hospital_id}", event))
         asyncio.run(_broadcast("admin", event))
+        asyncio.run(_broadcast("donors", event))  
 
     except Exception as e:
         logger.error(f"[REQUEST ACCEPTED ERROR] request_id={request_id} | error={e}")

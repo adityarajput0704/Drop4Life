@@ -24,13 +24,13 @@ class _LoginScreenState extends State<LoginScreen> {
      case 'admin':
        // Admin dashboard — placeholder until Phase 8
        ScaffoldMessenger.of(context).showSnackBar(
-         const SnackBar(content: Text('Admin panel coming soon. You are logged in as Admin.')),
+         const SnackBar(content: Text('Login from Web portal for admin access.')),
        );
        break;
      case 'hospital':
        // Hospital dashboard — placeholder
        ScaffoldMessenger.of(context).showSnackBar(
-         const SnackBar(content: Text('Hospital panel coming soon.')),
+         const SnackBar(content: Text('Login from Web portal for hospital access.')),
        );
        break;
      case null:

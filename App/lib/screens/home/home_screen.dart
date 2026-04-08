@@ -22,6 +22,8 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<DonorProvider>().fetchMyProfile();
       context.read<RequestProvider>().fetchUrgentRequests();
+      // Start WebSocket so new requests appear without manual refresh
+      context.read<RequestProvider>().initWebSocket();
     });
   }
 

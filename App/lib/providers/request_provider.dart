@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import '../api/request_service.dart';
 import '../models/blood_request.dart';
+import '../api/websocket_service.dart';    // ← new import
 
 class RequestProvider extends ChangeNotifier {
   final RequestService _requestService = RequestService();
+  final WebSocketService _wsService = WebSocketService();   // ← new
 
   List<BloodRequest> _requests = [];
   List<BloodRequest> _urgentRequests = [];
@@ -26,6 +28,23 @@ class RequestProvider extends ChangeNotifier {
   bool get hasNextPage => _hasNextPage;
   String get currentFilter => _currentFilter;
   String get currentSearch => _currentSearch;
+
+  void initWebSocket() {
+    _wsService.onNewRequest = () {
+      debugPrint('📨 New request event — refreshing list');
+      fetchRequests(refresh: true);
+      fetchUrgentRequests();
+    };
+    _wsService.onRequestUpdated = () {
+      debugPrint('📨 Request updated event — refreshing list');
+      fetchRequests(refresh: true, filter: _currentFilter);
+    };
+    _wsService.connect();
+  }
+
+  void disconnectWebSocket() {
+    _wsService.disconnect();
+  }
 
   Future<void> fetchRequests({
     bool refresh = false,

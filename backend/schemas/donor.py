@@ -35,21 +35,18 @@ class DonorUpdate(BaseModel):
 
 
 class DonorResponse(BaseModel):
-    """
-    Combines donor fields + user identity fields for a complete response.
-    The frontend gets everything it needs in one object.
-    """
     id:           int
     blood_group:  BloodGroup
     city:         str
     age:          int
     availability: AvailabilityStatus
     is_active:    bool
-
-    # These come from the joined User record
     full_name:    str
     email:        str
     phone:        Optional[str]
+    total_donations: int = 0    
+    lives_saved:     int = 0   
+    last_donation:   Optional[str] = None   
 
     model_config = {"from_attributes": True}
 
