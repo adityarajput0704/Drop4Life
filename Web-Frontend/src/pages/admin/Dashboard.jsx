@@ -1,16 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import PageLayout from '../../components/PageLayout.jsx'
 import LoadingSpinner from '../../components/LoadingSpinner.jsx'
 import Pagination from '../../components/Pagination.jsx'
 import BloodBadge from '../../components/BloodBadge.jsx'
 import UrgencyBadge from '../../components/UrgencyBadge.jsx'
 import StatusBadge from '../../components/StatusBadge.jsx'
+import RequestDetailModal from '../../components/RequestDetailModal.jsx'
 import { adminAllRequests } from '../../api/requests'
 import { listDonors } from '../../api/donors'
 import { adminListHospitals } from '../../api/hospitals'
 import { formatDateTime } from '../../utils/helpers'
 import { useWebSocket } from '../../hooks/useWebSockets.js'
-import { useCallback } from 'react'
 
 function StatCard({ title, value, variant }) {
   const base = 'rounded-2xl border border-[#E5E7EB] p-5 shadow-sm'
@@ -37,38 +37,32 @@ export default function Dashboard() {
 
   const [donorStats, setDonorStats] = useState({ total: null })
   const [hospitalStats, setHospitalStats] = useState({ total: null })
-
   const [refreshTick, setRefreshTick] = useState(0)
 
+  // Selected request for the detail modal
+  const [selectedRequest, setSelectedRequest] = useState(null)
 
-  
-  // ── WebSocket — listen for real-time events ──────────────────────────────
+  // ── WebSocket — real-time events ─────────────────────────────────────────
   const handleWsEvent = useCallback((event) => {
-    // Show toast for every event type
     const messages = {
       REQUEST_CREATED:  `🩸 New request: ${event.payload?.blood_group} — ${event.payload?.hospital_name}`,
       REQUEST_ACCEPTED: `✅ Request accepted by ${event.payload?.donor_name}`,
       REQUEST_FULFILLED:`💉 Donation fulfilled at ${event.payload?.hospital_name}`,
     }
-
     const message = messages[event.type]
     if (message) {
-      window.dispatchEvent(
-       new CustomEvent('app:toast', {
-      detail: { type: 'success', message },
-    })
-      )
+      window.dispatchEvent(new CustomEvent('app:toast', {
+        detail: { type: 'success', message },
+      }))
     }
-
-    // Refresh table data when requests change
     if (['REQUEST_CREATED', 'REQUEST_ACCEPTED', 'REQUEST_FULFILLED'].includes(event.type)) {
-      setRefreshTick(t => t + 1)   // triggers useEffect to re-fetch
+      setRefreshTick(t => t + 1)
     }
   }, [])
 
   useWebSocket('admin', handleWsEvent)
 
-
+  // ── Data fetching ─────────────────────────────────────────────────────────
   useEffect(() => {
     let alive = true
     setLoading(true)
@@ -94,11 +88,10 @@ export default function Dashboard() {
         setLoading(false)
       })
 
-    return () => {
-      alive = false
-    }
+    return () => { alive = false }
   }, [page, refreshTick])
 
+  // ── Stats ─────────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
     const totalRequests = data?.total ?? (data?.items || []).length
     const totalDonors = donorStats.total
@@ -107,8 +100,7 @@ export default function Dashboard() {
     const items = data?.items || []
     const today = new Date()
     const fulfilledToday = items.filter((r) => {
-      const s = String(r?.status || '').toUpperCase()
-      if (s !== 'FULFILLED') return false
+      if (String(r?.status || '').toUpperCase() !== 'FULFILLED') return false
       const d = new Date(r?.fulfilled_at || r?.updated_at || r?.created_at)
       if (Number.isNaN(d.getTime())) return false
       return (
@@ -121,6 +113,12 @@ export default function Dashboard() {
     return { totalRequests, totalDonors, totalHospitals, fulfilledToday }
   }, [data, donorStats.total, hospitalStats.total])
 
+  // ── After modal cancel / update — refresh table ───────────────────────────
+  function handleRequestUpdated() {
+    setSelectedRequest(null)
+    adminAllRequests({ page, pageSize: 10 }).then(setData)
+  }
+
   return (
     <PageLayout>
       {loading ? <LoadingSpinner /> : null}
@@ -132,13 +130,15 @@ export default function Dashboard() {
 
       {!loading && !error ? (
         <div className="space-y-6">
+          {/* Stat cards */}
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <StatCard title="TOTAL REQUESTS" value={stats.totalRequests ?? '-'} />
-            <StatCard title="TOTAL DONORS" value={stats.totalDonors ?? '-'} />
+            <StatCard title="TOTAL REQUESTS"  value={stats.totalRequests  ?? '-'} />
+            <StatCard title="TOTAL DONORS"    value={stats.totalDonors    ?? '-'} />
             <StatCard title="TOTAL HOSPITALS" value={stats.totalHospitals ?? '-'} />
             <StatCard title="FULFILLED TODAY" value={stats.fulfilledToday ?? '-'} variant="red" />
           </div>
 
+          {/* Requests table */}
           <div className="rounded-2xl border border-[#E5E7EB] bg-white shadow-sm">
             <div className="flex flex-col gap-3 border-b border-[#E5E7EB] px-6 py-4 md:flex-row md:items-center md:justify-between">
               <div className="text-sm font-bold text-[#111827]">Active Requests</div>
@@ -172,13 +172,17 @@ export default function Dashboard() {
                       <td className="px-6 py-4">
                         <StatusBadge status={r.status} />
                       </td>
-                      <td className="px-6 py-4 text-[#6B7280] font-semibold">{formatDateTime(r.created_at)}</td>
+                      <td className="px-6 py-4 text-[#6B7280] font-semibold">
+                        {formatDateTime(r.created_at)}
+                      </td>
                       <td className="px-6 py-4">
+                        {/* View — opens RequestDetailModal with admin cancel ability */}
                         <button
                           type="button"
-                          className="inline-flex items-center justify-center rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm font-semibold text-[#111827] hover:bg-[#F7F7F7]"
+                          onClick={() => setSelectedRequest(r)}
+                          className="rounded-xl bg-[#F9FAFB] px-4 py-2 text-sm font-semibold text-[#111827] ring-1 ring-[#E5E7EB] hover:bg-white"
                         >
-                          ⋯
+                          View
                         </button>
                       </td>
                     </tr>
@@ -198,7 +202,16 @@ export default function Dashboard() {
           </div>
         </div>
       ) : null}
+
+      {/* Request detail modal — showAdminCancel enables the cancel button inside modal */}
+      {selectedRequest && (
+        <RequestDetailModal
+          request={selectedRequest}
+          onClose={() => setSelectedRequest(null)}
+          onUpdated={handleRequestUpdated}
+          showAdminCancel={true}
+        />
+      )}
     </PageLayout>
   )
 }
-

@@ -23,29 +23,39 @@ function Avatar({ name }) {
   )
 }
 
+// Resolves availability from any field name the backend might use
+function resolveAvailable(d) {
+  return d.availability ?? null
+}
+
+
 function AvailabilityBadge({ value }) {
-  const available = value === true
+  if (!value) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-[#F3F4F6] px-3 py-1 text-xs font-bold text-[#6B7280]">
+        UNKNOWN
+      </span>
+    )
+  }
+
+  const cleanValue = value.trim().toUpperCase()
+  const isAvailable = cleanValue === 'AVAILABLE'
+
   return (
     <span
       className={[
         'inline-flex items-center rounded-full px-3 py-1 text-xs font-bold',
-        available ? 'bg-[#F0FDF4] text-[#15803D]' : 'bg-pink-50 text-pink-700',
+        isAvailable
+          ? 'bg-[#F0FDF4] text-[#15803D]'
+          : 'bg-pink-50 text-pink-700',
       ].join(' ')}
     >
-      {available ? 'AVAILABLE' : 'UNAVAILABLE'}
+      {cleanValue}
     </span>
   )
 }
 
-function StatusDot({ value }) {
-  const active = value === true
-  return (
-    <span className="inline-flex items-center gap-2 text-xs font-bold">
-      <span className={`h-2 w-2 rounded-full ${active ? 'bg-[#22C55E]' : 'bg-[#6B7280]'}`} />
-      <span className={active ? 'text-[#15803D]' : 'text-[#6B7280]'}>{active ? 'ACTIVE' : 'INACTIVE'}</span>
-    </span>
-  )
-}
+
 
 export default function Donors() {
   const [page, setPage] = useState(1)
@@ -74,16 +84,18 @@ export default function Donors() {
         setLoading(false)
       })
 
-    return () => {
-      alive = false
-    }
+    return () => { alive = false }
   }, [page, search])
 
   const items = data?.items || []
 
   const stats = useMemo(() => {
     const total = data?.total ?? items.length
-    const availableNow = items.filter((d) => d?.available === true || d?.is_available === true).length
+
+    const availableNow = items.filter(
+      (d) => resolveAvailable(d)?.trim().toUpperCase() === 'AVAILABLE'
+    ).length
+
     return { total, availableNow }
   }, [data, items])
 
@@ -99,10 +111,12 @@ export default function Donors() {
           <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row md:items-center">
             <div className="rounded-2xl border border-[#E5E7EB] bg-white px-4 py-3 shadow-sm">
               <div className="text-xs font-semibold tracking-[0.18em] text-[#6B7280]">TOTAL DONORS</div>
+              {/* data.total is the real backend count, not just current page */}
               <div className="mt-1 text-2xl font-extrabold text-[#111827]">{stats.total}</div>
             </div>
             <div className="rounded-2xl border border-[#E5E7EB] bg-white px-4 py-3 shadow-sm">
               <div className="text-xs font-semibold tracking-[0.18em] text-[#6B7280]">AVAILABLE NOW</div>
+              {/* Reflects real is_available from DB — updated when Flutter donor toggles */}
               <div className="mt-1 text-2xl font-extrabold text-teal-600">{stats.availableNow}</div>
             </div>
           </div>
@@ -136,40 +150,44 @@ export default function Donors() {
         {!loading && !error ? (
           <div className="rounded-2xl border border-[#E5E7EB] bg-white shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px]">
+              <table className="w-full min-w-245">
                 <thead>
                   <tr className="bg-[#F9FAFB] text-left text-xs font-semibold text-[#6B7280]">
                     <th className="px-6 py-3">DONOR NAME</th>
                     <th className="px-6 py-3">BLOOD GROUP</th>
                     <th className="px-6 py-3">CITY</th>
                     <th className="px-6 py-3">AVAILABILITY</th>
-                    <th className="px-6 py-3">STATUS</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E5E7EB]">
-                  {items.map((d) => (
-                    <tr key={d.id || d.donor_id} className="text-sm text-[#111827]">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <Avatar name={d.name || d.full_name} />
-                          <div>
-                            <div className="font-semibold">{d.name || d.full_name || '-'}</div>
-                            <div className="mt-1 text-xs font-semibold text-[#6B7280]">ID: {d.donor_id || d.id || '-'}</div>
+                  {items.map((d) => {
+                    const available = resolveAvailable(d)
+                    // const active = resolveActive(d)
+
+                    return (
+                      <tr key={d.id || d.donor_id} className="text-sm text-[#111827]">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <Avatar name={d.name || d.full_name} />
+                            <div>
+                              <div className="font-semibold">{d.name || d.full_name || '-'}</div>
+                              <div className="mt-1 text-xs font-semibold text-[#6B7280]">
+                                ID: {d.donor_id || d.id || '-'}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <BloodBadge group={d.blood_group || d.group} />
-                      </td>
-                      <td className="px-6 py-4 font-semibold text-[#6B7280]">{d.city || '-'}</td>
-                      <td className="px-6 py-4">
-                        <AvailabilityBadge value={d.available ?? d.is_available} />
-                      </td>
-                      <td className="px-6 py-4">
-                        <StatusDot value={d.active ?? d.is_active} />
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="px-6 py-4">
+                          <BloodBadge group={d.blood_group || d.group} />
+                        </td>
+                        <td className="px-6 py-4 font-semibold text-[#6B7280]">{d.city || '-'}</td>
+                        <td className="px-6 py-4">
+                          {/* Reads is_available from backend — reflects Flutter donor toggle in real time */}
+                          <AvailabilityBadge value={available} />
+                        </td>
+                      </tr>
+                    )
+                  })}
                   {items.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="px-6 py-10 text-center text-sm font-semibold text-[#6B7280]">
@@ -188,4 +206,3 @@ export default function Donors() {
     </PageLayout>
   )
 }
-

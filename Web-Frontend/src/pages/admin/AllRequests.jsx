@@ -41,6 +41,9 @@ export default function AllRequests() {
   )
 
   useEffect(() => {
+    console.log("API RESPONSE:", data)
+  }, [data])
+  useEffect(() => {
     let alive = true
     setLoading(true)
     setError(null)
@@ -240,20 +243,6 @@ export default function AllRequests() {
               <Pagination response={data} onPageChange={setPage} />
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-3">
-              <div className="rounded-2xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
-                <div className="text-xs font-semibold tracking-[0.18em] text-[#6B7280]">AVERAGE RESPONSE TIME</div>
-                <div className="mt-2 text-2xl font-extrabold text-[#111827]">{bottomStats.avgMinutes}m</div>
-              </div>
-              <div className="rounded-2xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
-                <div className="text-xs font-semibold tracking-[0.18em] text-[#6B7280]">STOCK FULFILLMENT RATE</div>
-                <div className="mt-2 text-2xl font-extrabold text-[#111827]">{bottomStats.fulfillmentRate}%</div>
-              </div>
-              <div className="rounded-2xl border border-transparent bg-[#C8102E] p-5 shadow-sm text-white">
-                <div className="text-xs font-semibold tracking-[0.18em] text-white/80">URGENT ALERTS</div>
-                <div className="mt-2 text-2xl font-extrabold">{bottomStats.urgentAlerts}</div>
-              </div>
-            </div>
           </div>
         ) : null}
         {selectedRequest && (
@@ -272,4 +261,3 @@ export default function AllRequests() {
     </PageLayout>
   )
 }
-

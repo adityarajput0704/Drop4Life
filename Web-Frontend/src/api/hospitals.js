@@ -8,3 +8,7 @@ export async function adminListHospitals({ page = 1, pageSize = 10, search } = {
   return res.data
 }
 
+export async function verifyHospital(hospitalId) {
+  const res = await api.patch(`/hospitals/${hospitalId}/verify`)
+  return res.data
+}

@@ -85,7 +85,6 @@ def create_blood_request(
     return build_request_response(blood_request)
 
 
-@router.get("/my-requests", response_model=BloodRequestListResponse)
 @router.get("/my-requests", response_model=PagedResponse[BloodRequestResponse])
 def hospital_my_requests(
     pagination:       PaginationParams = Depends(),
@@ -351,7 +350,7 @@ def fulfil_blood_request(
 
 # ── ADMIN ─────────────────────────────────────────────────────────────────────
 
-@router.get("/admin/all", response_model=BloodRequestListResponse)
+@router.get("/admin/all", response_model=PagedResponse[BloodRequestResponse])
 def admin_list_all_requests(
     pagination: PaginationParams = Depends(),
     status:      Optional[str] = Query(None),

@@ -4,6 +4,7 @@ import StatusBadge from './StatusBadge.jsx'
 import UrgencyBadge from './UrgencyBadge.jsx'
 import { formatDateTime } from '../utils/helpers'
 import { cancelRequest, adminCancelRequest } from '../api/requests'
+import { verifyHospital } from '../api/hospitals'
 
 function DetailRow({ label, value }) {
   if (value === null || value === undefined || value === '') return null
@@ -29,10 +30,13 @@ export default function RequestDetailModal({
   onUpdated,
   showCancel = false,
   showAdminCancel = false,
+  showAdminVerify = false,
 }) {
   const [request, setRequest] = useState(initialRequest)
   const [loading, setLoading] = useState(null)
   const [error, setError] = useState(null)
+  const [hospital, setHospital] = useState(null)
+  const is_verified = hospital ? hospital.is_verified : request?.hospital_is_verified
 
   const status = String(request?.status || '').toUpperCase()
   const id = request?.id
@@ -56,6 +60,27 @@ export default function RequestDetailModal({
     }
   }
 
+  async function handleVerify() {
+    setLoading('verify')
+    setError(null)
+
+    try {
+      const updated = await verifyHospital(id)
+      setHospital(updated)
+      onUpdated?.(updated)
+
+      window.dispatchEvent(
+        new CustomEvent('app:toast', {
+          detail: { type: 'success', message: 'Hospital verified successfully.' }
+        })
+      )
+    } catch (e) {
+      const msg = e?.response?.data?.detail || 'Failed to verify hospital.'
+      setError(msg)
+    } finally {
+      setLoading(null)
+    }
+  }
   // Admin cancels any request
   async function handleAdminCancel() {
     setLoading('adminCancel')
@@ -75,7 +100,7 @@ export default function RequestDetailModal({
     }
   }
 
-  // Only show cancel if request is still OPEN or ACCEPTED
+  const verifyAllowed = showAdminVerify && !is_verified
   const cancelAllowed = showCancel && (status === 'OPEN')
   const adminCancelAllowed = showAdminCancel && (status === 'OPEN' || status === 'ACCEPTED')
   const hasActions = cancelAllowed || adminCancelAllowed
@@ -159,6 +184,17 @@ export default function RequestDetailModal({
             </div>
           )}
         </div>
+
+        {verifyAllowed && (
+          <button
+            type="button"
+            onClick={handleVerify}
+            disabled={!!loading}
+            className="rounded-xl border border-green-200 bg-green-50 px-5 py-2.5 text-sm font-semibold text-green-700 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading === 'verify' ? 'Verifying…' : 'Verify Hospital'}
+          </button>
+        )}
 
         {/* Footer — only rendered when there are actions */}
         {hasActions && (

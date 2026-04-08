@@ -99,7 +99,7 @@ export default function Dashboard() {
           <div className="rounded-2xl border border-[#E5E7EB] bg-white shadow-sm">
             <div className="border-b border-[#E5E7EB] px-6 py-4">
               <div className="text-sm font-bold text-[#111827]">All Blood Requests</div>
-              <div className="text-xs font-semibold text-[#6B7280] mt-0.5">Live feed from all hospitals</div>
+              <div className="mt-1 text-xs font-semibold text-[#6B7280]">Recent requests from all hospitals.</div>
             </div>
 
             <div className="overflow-x-auto">
