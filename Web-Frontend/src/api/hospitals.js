@@ -12,3 +12,8 @@ export async function verifyHospital(hospitalId) {
   const res = await api.patch(`/hospitals/${hospitalId}/verify`)
   return res.data
 }
+
+export async function get_current_hospital(hospitalId) {
+  const res = await api.get(`/hospitals/${hospitalId}`)
+  return res.data
+}
