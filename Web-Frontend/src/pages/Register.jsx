@@ -71,8 +71,8 @@ export default function Register() {
 
   const canSubmit = useMemo(() => (
     email.trim() && password && confirmPassword &&
-    name.trim() && phone.trim() && address.trim() && city.trim()
-  ), [email, password, confirmPassword, name, phone, address, city])
+    name.trim() && phone.trim() && address.trim() && city.trim() && registrationNo.trim()
+  ), [email, password, confirmPassword, name, phone, address, city, registrationNo])
 
   async function onSubmit(e) {
     e.preventDefault()
@@ -111,7 +111,7 @@ export default function Register() {
           phone: phone.trim(),
           address: address.trim(),
           city: city.trim(),
-          registration_no: registrationNo.trim() || undefined,
+          registration_no: registrationNo.trim(),
         },
         { headers: { Authorization: `Bearer ${token}` } },
       )
@@ -132,7 +132,12 @@ export default function Register() {
         setError('Please enter a valid email address.')
       } else {
         const detail = err?.response?.data?.detail
-        setError(detail || 'Registration failed. Please try again.')
+        if (Array.isArray(detail)) {
+          // Pydantic validation error — show first field error
+          setError(detail[0]?.msg || 'Validation error. Check all fields.')
+        } else {
+          setError(detail || 'Registration failed. Please try again.')
+        }
       }
     } finally {
       setSubmitting(false)
@@ -173,7 +178,7 @@ export default function Register() {
               <TabButton active={false} onClick={() => navigate('/login')}>
                 Login
               </TabButton>
-              <TabButton active onClick={() => {}}>
+              <TabButton active onClick={() => { }}>
                 Register
               </TabButton>
             </div>
@@ -254,7 +259,7 @@ export default function Register() {
               />
             </Field>
 
-            <Field label="REGISTRATION NUMBER (OPTIONAL)">
+            <Field label="REGISTRATION NUMBER (REQUIRED)">
               <Input
                 value={registrationNo}
                 onChange={(e) => setRegistrationNo(e.target.value)}

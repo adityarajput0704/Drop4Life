@@ -83,7 +83,7 @@ export default function MyRequests() {
     setLoading(true)
     setError(null)
 
-    getMyRequests({ page, pageSize: 8, status: statusParam, bloodGroup: bloodGroup || undefined, refreshTick })
+    getMyRequests({ page, pageSize: 10, status: statusParam, bloodGroup: bloodGroup, refreshTick })
       .then((d) => {
         if (!alive) return
         setData(d)

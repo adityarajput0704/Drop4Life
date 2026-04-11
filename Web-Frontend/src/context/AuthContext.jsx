@@ -41,7 +41,7 @@ export function AuthProvider({ children }) {
           setProfile(hospital)
           return                    
         } catch (e) {
-
+           
         }
 
         const userData = await fetchMe()

@@ -8,7 +8,7 @@ class HospitalCreate(BaseModel):
     phone:           str = Field(..., min_length=10, max_length=15)
     address:         str = Field(..., min_length=5, max_length=300)
     city:            str = Field(..., min_length=2, max_length=100)
-    registration_no: Optional[str] = Field(None, min_length=3, max_length=100)
+    registration_no: str = Field(..., min_length=3, max_length=100)
 
 
 class HospitalResponse(BaseModel):
