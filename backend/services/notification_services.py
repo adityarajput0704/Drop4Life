@@ -7,6 +7,8 @@ from backend.models.donor import Donor
 from backend.core.websocket_manager import manager
 from backend.dependencies.__init__ import get_db
 from fastapi import Depends
+from backend.services.fcm_service import send_push_notification
+from backend.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -24,25 +26,16 @@ def notify_request_created(
     hospital_name: str,
     blood_group: str,
     urgency: str,
-    db: Session = Depends(get_db),
+    db: Session,                     # ← db is passed in from blood_requests.py
 ):
-    """
-    Background task — fires after a new blood request is created.
-    Broadcasts to:
-      - admin room (always)
-    Logs the event.
-    """
     try:
         logger.info(
-            f"[REQUEST CREATED] "
-            f"Request ID: {request_id} | "
-            f"Hospital: {hospital_name} | "
-            f"Blood Group: {blood_group} | "
-            f"Timestamp: {datetime.utcnow().isoformat()}"
+            f"[REQUEST CREATED] ID={request_id} | "
+            f"Hospital={hospital_name} | BG={blood_group}"
         )
 
         event = {
-            "event": "request_created",          # ← Flutter listens for "event" key
+            "event": "request_created",
             "type": "REQUEST_CREATED",
             "payload": {
                 "request_id": request_id,
@@ -53,11 +46,49 @@ def notify_request_created(
             }
         }
 
-        # Run async broadcast from sync background task
         asyncio.run(_broadcast("admin", event))
         asyncio.run(_broadcast("donors", event))
+
+        # ── NEW: Send FCM push to all matching available donors ──
+        from backend.models.donor import Donor, BloodGroupEnum, AvailabilityEnum
+        from backend.utils.blood_compatibility import get_compatible_donor_groups
+
+        compatible_donor_blood_groups = get_compatible_donor_groups(blood_group)
+
+        # Find all active, available donors with matching blood group
+        matching_donors = (
+            db.query(Donor)
+            .join(User, Donor.user_id == User.id)
+            .filter(
+                Donor.blood_group.in_(compatible_donor_blood_groups),
+                Donor.availability == AvailabilityEnum.AVAILABLE,
+                Donor.is_active == True,
+                User.fcm_token != None,       # ← only donors with the Flutter app
+            )
+            .all()
+        )
+
+        logger.info(f"[FCM] Found {len(matching_donors)} donors to notify")
+
+        urgency_emoji = {"critical": "URGENT", "high": "High Priority", "medium": "Medium", "low": "Low"}
+        urgency_label = urgency_emoji.get(urgency.lower(), urgency)
+
+        for donor in matching_donors:
+            send_push_notification(
+                fcm_token=donor.user.fcm_token,
+                title=f"Blood Needed — {blood_group}",
+                body=f"{urgency_label}: {hospital_name} needs {blood_group} blood. Can you help?",
+                data={
+                    "request_id": str(request_id),
+                    "blood_group": blood_group,
+                    "urgency": urgency,
+                    "type": "REQUEST_CREATED",
+                },
+            )
+
     except Exception as e:
         logger.error(f"[REQUEST CREATED ERROR] request_id={request_id} | error={e}")
+
 
 
 def notify_request_accepted(

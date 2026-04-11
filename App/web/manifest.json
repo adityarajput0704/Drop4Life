@@ -1,6 +1,6 @@
 {
-    "name": "drop4life",
-    "short_name": "drop4life",
+    "name": "Drop4life",
+    "short_name": "Drop4life",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
