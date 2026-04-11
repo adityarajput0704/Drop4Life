@@ -10,7 +10,7 @@ async function fetchMe() {
 }
 
 async function fetchHospital() {
-  const res = await api.get('/hospitalme')
+  const res = await api.get('/hospitals/me')
   return res.data
 }
 
@@ -37,15 +37,15 @@ export function AuthProvider({ children }) {
       try {
         try {
           const hospital = await fetchHospital()
-          setRole('hospital')        // HospitalResponse has no role field, we set it manually
+          setRole('hospital')       
           setProfile(hospital)
-          return                     // ✅ found — stop here
+          return                    
         } catch (e) {
-          // Not a hospital, try user endpoint
+
         }
 
         const userData = await fetchMe()
-        setRole(userData.role)      // UserResponse has role field
+        setRole(userData.role)    
         setProfile(userData)
       } catch (e) {
         setError(e)
