@@ -24,9 +24,17 @@ from backend.services.notification_services import (
     notify_request_accepted,
     notify_donation_fulfilled,
 )
-
+from math import radians, sin, cos, sqrt, atan2
+from backend.models.hospitals import Hospital
 
 router = APIRouter(prefix="/blood-requests", tags=["Blood Requests"])
+
+def _haversine(lat1, lon1, lat2, lon2):
+    R = 6371
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+    dlat, dlon = lat2 - lat1, lon2 - lon1
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    return R * 2 * atan2(sqrt(a), sqrt(1 - a))
 
 
 def build_request_response(req: BloodRequest) -> dict:
@@ -205,7 +213,7 @@ def cancel_my_acceptance(
 
 @router.get("/matching", response_model=BloodRequestListResponse)
 def get_matching_requests(
-    radius_km:    float = Query(default=50.0, description="Search radius in km"),
+    radius_km:    float = Query(default=30.0),  
     current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
 ):
@@ -213,7 +221,6 @@ def get_matching_requests(
     if not donor:
         raise HTTPException(status_code=403, detail="Only registered donors can view matching requests.")
 
-    donor_blood = donor.blood_group.value
     compatible_recipient_groups = [
         group
         for group, compatible_donors in {
@@ -226,7 +233,7 @@ def get_matching_requests(
             "O+":  ["O+", "O-"],
             "O-":  ["O-"],
         }.items()
-        if donor_blood in compatible_donors
+        if donor.blood_group.value in compatible_donors
     ]
 
     requests = (
@@ -239,32 +246,34 @@ def get_matching_requests(
         .all()
     )
 
-    # ── Location filter — only if donor has shared GPS ──
+    # ── Strategy 1: GPS available — filter by real distance ──
     if donor.latitude and donor.longitude:
-        from math import radians, sin, cos, sqrt, atan2
-
-        def haversine(lat1, lon1, lat2, lon2):
-            R = 6371
-            lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
-            dlat = lat2 - lat1
-            dlon = lon2 - lon1
-            a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-            return R * 2 * atan2(sqrt(a), sqrt(1 - a))
-
         filtered = []
         for req in requests:
             hosp = req.hospital
             if hosp.latitude and hosp.longitude:
-                dist = haversine(
+                dist = _haversine(
                     donor.latitude, donor.longitude,
                     hosp.latitude,  hosp.longitude,
                 )
                 if dist <= radius_km:
                     filtered.append(req)
-            # If hospital has no coordinates — exclude from location-filtered results
+            # Hospital with no coordinates — skip entirely
         requests = filtered
 
-    return {"total": len(requests), "items": [build_request_response(r) for r in requests]}
+    # ── Strategy 2: No GPS — filter by donor's city only ──
+    else:
+        donor_city = donor.city.strip().lower()
+        requests = [
+            req for req in requests
+            if req.hospital.city.strip().lower() == donor_city
+        ]
+
+    return {
+        "total": len(requests),
+        "items": [build_request_response(r) for r in requests],
+    }
+
 
 @router.post("/{request_id}/accept", response_model=BloodRequestResponse)
 def accept_blood_request(

@@ -42,6 +42,9 @@ class DonorProvider extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
 
       _donor = await _donorService.getMyProfile();
+
+      updateLocation();
+      
     } catch (e) {
       _error = e.toString();
     } finally {
