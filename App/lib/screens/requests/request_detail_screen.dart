@@ -7,6 +7,9 @@ import '../../providers/request_provider.dart';
 import '../../widgets/blood_badge.dart';
 import '../../widgets/urgency_badge.dart';
 import '../../providers/donor_provider.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import '../map/hospital_map_screen.dart';
 
 class RequestDetailScreen extends StatelessWidget {
   final BloodRequest request;
@@ -153,30 +156,85 @@ class RequestDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
 
-            Container(
-              height: 150,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: AppTheme.border,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.map, size: 48, color: AppTheme.textSecondary),
-                    SizedBox(height: 8),
-                    Text(
-                      'Map View Placeholder',
-                      style: TextStyle(
-                        color: AppTheme.textSecondary,
-                        fontWeight: FontWeight.bold,
-                      ),
+            Builder(builder: (context) {
+              final lat = request.hospitalLat;
+              final lng = request.hospitalLng;
+
+              if (lat == null || lng == null) {
+                return Container(
+                  height: 150,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: AppTheme.border,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Center(
+                    child: Text('Map not available',
+                        style: TextStyle(color: AppTheme.textSecondary)),
+                  ),
+                );
+              }
+
+              return GestureDetector(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => HospitalMapScreen(
+                      request: request,
+                      hospitalLat: lat,
+                      hospitalLng: lng,
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: SizedBox(
+                    height: 160,
+                    child: Stack(
+                      children: [
+                        FlutterMap(
+                          options: MapOptions(
+                            initialCenter: LatLng(lat, lng),
+                            initialZoom: 14,
+                            interactionOptions: const InteractionOptions(
+                              flags: InteractiveFlag.none, // static preview
+                            ),
+                          ),
+                          children: [
+                            TileLayer(
+                              urlTemplate:
+                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                              userAgentPackageName: 'com.example.drop4life',
+                            ),
+                            MarkerLayer(markers: [
+                              Marker(
+                                point: LatLng(lat, lng),
+                                width: 40,
+                                height: 40,
+                                child: const Icon(Icons.local_hospital,
+                                    color: Colors.red, size: 36),
+                              ),
+                            ]),
+                          ],
+                        ),
+                        // Tap to expand overlay
+                        Positioned.fill(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.05),
+                            ),
+                            child: const Center(
+                              child: Icon(Icons.fullscreen,
+                                  color: Colors.white, size: 32),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
             const SizedBox(height: 16),
 
             Container(

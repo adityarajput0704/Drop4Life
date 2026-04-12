@@ -9,3 +9,14 @@ export async function listDonors({ page = 1, pageSize = 10, search, city } = {})
   return res.data
 }
 
+export async function getNearbyDonors({ lat, lng, radiusKm = 50 }) {
+  const res = await api.get('/donors/', {
+    params: {
+      lat,
+      lng,
+      radius_km: radiusKm,
+      is_available: true,
+    },
+  })
+  return res.data
+}

@@ -14,6 +14,8 @@ class Donor {
   final bool isInCooldown;
   final String? cooldownUntil;
   final int daysRemaining;
+  final double? latitude;
+  final double? longitude;
 
   Donor({
     required this.id,
@@ -29,6 +31,8 @@ class Donor {
     this.isInCooldown = false,
     this.cooldownUntil,
     this.daysRemaining = 0,
+    this.latitude,
+    this.longitude,
   });
 
   factory Donor.fromJson(Map<String, dynamic> json) {
@@ -39,47 +43,62 @@ class Donor {
     }
 
     return Donor(
-      id:             json['id']?.toString() ?? '',
-      fullName:       json['full_name'] ?? '',
-      email:          json['email'] ?? '',
-      bloodGroup:     json['blood_group'] ?? '',
-      city:           json['city'] ?? '',
-      age:            json['age'] ?? 0,
-      isAvailable:    parseAvailability(json['availability'] ?? json['is_available']),
+      id: json['id']?.toString() ?? '',
+      fullName: json['full_name'] ?? '',
+      email: json['email'] ?? '',
+      bloodGroup: json['blood_group'] ?? '',
+      city: json['city'] ?? '',
+      age: json['age'] ?? 0,
+      isAvailable:
+          parseAvailability(json['availability'] ?? json['is_available']),
       totalDonations: json['total_donations'] ?? 0,
-      livesSaved:     json['lives_saved'] ?? 0,
-      lastDonation:   json['last_donation'] != null
+      livesSaved: json['lives_saved'] ?? 0,
+      lastDonation: json['last_donation'] != null
           ? DateTime.tryParse(json['last_donation'])
           : null,
       // Cooldown
-      isInCooldown:   json['is_in_cooldown'] ?? false,
-      cooldownUntil:  json['cooldown_until'],
-      daysRemaining:  json['days_remaining'] ?? 0,
+      isInCooldown: json['is_in_cooldown'] ?? false,
+      cooldownUntil: json['cooldown_until'],
+      daysRemaining: json['days_remaining'] ?? 0,
+      latitude: (json['latitude'] as num?)?.toDouble(),
+      longitude: (json['longitude'] as num?)?.toDouble(),
     );
   }
 
   // copyWith updated to include new fields
   Donor copyWith({
-    String? id, String? fullName, String? email,
-    String? bloodGroup, String? city, int? age,
-    bool? isAvailable, int? totalDonations,
-    int? livesSaved, DateTime? lastDonation,
-    bool? isInCooldown, String? cooldownUntil, int? daysRemaining,
+    String? id,
+    String? fullName,
+    String? email,
+    String? bloodGroup,
+    String? city,
+    int? age,
+    bool? isAvailable,
+    int? totalDonations,
+    int? livesSaved,
+    DateTime? lastDonation,
+    bool? isInCooldown,
+    String? cooldownUntil,
+    int? daysRemaining,
+    double? latitude,
+    double? longitude,
   }) {
     return Donor(
-      id:             id ?? this.id,
-      fullName:       fullName ?? this.fullName,
-      email:          email ?? this.email,
-      bloodGroup:     bloodGroup ?? this.bloodGroup,
-      city:           city ?? this.city,
-      age:            age ?? this.age,
-      isAvailable:    isAvailable ?? this.isAvailable,
+      id: id ?? this.id,
+      fullName: fullName ?? this.fullName,
+      email: email ?? this.email,
+      bloodGroup: bloodGroup ?? this.bloodGroup,
+      city: city ?? this.city,
+      age: age ?? this.age,
+      isAvailable: isAvailable ?? this.isAvailable,
       totalDonations: totalDonations ?? this.totalDonations,
-      livesSaved:     livesSaved ?? this.livesSaved,
-      lastDonation:   lastDonation ?? this.lastDonation,
-      isInCooldown:   isInCooldown ?? this.isInCooldown,
-      cooldownUntil:  cooldownUntil ?? this.cooldownUntil,
-      daysRemaining:  daysRemaining ?? this.daysRemaining,
+      livesSaved: livesSaved ?? this.livesSaved,
+      lastDonation: lastDonation ?? this.lastDonation,
+      isInCooldown: isInCooldown ?? this.isInCooldown,
+      cooldownUntil: cooldownUntil ?? this.cooldownUntil,
+      daysRemaining: daysRemaining ?? this.daysRemaining,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
     );
   }
 }

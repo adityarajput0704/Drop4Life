@@ -21,6 +21,9 @@ class HospitalResponse(BaseModel):
     registration_no: str
     is_verified:     bool
     is_active:       bool
+    # Location — null for hospitals registered before this feature
+    latitude:        Optional[float] = None
+    longitude:       Optional[float] = None
     created_at:      datetime
 
     class Config:

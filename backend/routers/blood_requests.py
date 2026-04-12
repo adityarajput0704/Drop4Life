@@ -44,6 +44,9 @@ def build_request_response(req: BloodRequest) -> dict:
         "hospital_phone": req.hospital.phone,
         "donor_name":     req.donor.user.full_name if req.donor else None,
         "donor_phone":    req.donor.user.phone     if req.donor else None,
+        # Location — for Flutter map screen
+        "hospital_lat":   req.hospital.latitude,
+        "hospital_lng":   req.hospital.longitude,
     }
 
 

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SAEnum, ForeignKey, Date
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SAEnum, ForeignKey, Date, Float
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from backend.database import Base
@@ -27,26 +27,22 @@ class Donor(Base):
     blood_group        = Column(SAEnum(BloodGroupEnum), nullable=False)
     city               = Column(String(100), nullable=False)
     age                = Column(Integer, nullable=False)
-    availability       = Column(
-        SAEnum(AvailabilityEnum),
-        nullable=False,
-        default=AvailabilityEnum.AVAILABLE,
-    )
+    availability       = Column(SAEnum(AvailabilityEnum), nullable=False, default=AvailabilityEnum.AVAILABLE)
     is_active          = Column(Boolean, default=True, nullable=False)
-
-    # Cooldown tracking — both null until first donation
     last_donation_date = Column(Date, nullable=True)
     cooldown_until     = Column(Date, nullable=True)
 
+    # Location — null until donor shares GPS
+    latitude           = Column(Float, nullable=True)
+    longitude          = Column(Float, nullable=True)
+
     created_at         = Column(DateTime(timezone=True), server_default=func.now())
     updated_at         = Column(DateTime(timezone=True), onupdate=func.now())
-
     user               = relationship("User", back_populates="donor_profile")
     donations          = relationship("BloodRequest", back_populates="donor")
 
     @property
     def is_in_cooldown(self) -> bool:
-        """True if donor is currently within 90-day cooldown period."""
         from datetime import date
         if self.cooldown_until is None:
             return False

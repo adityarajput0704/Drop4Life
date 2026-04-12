@@ -9,12 +9,18 @@ async function fetchMe() {
   return res.data
 }
 
+async function fetchHospitalProfile() {
+  const res = await api.get('/hospitals/me')
+  return res.data
+}
+
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null)
-  const [role, setRole] = useState(null)
-  const [profile, setProfile] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [user, setUser]           = useState(null)
+  const [role, setRole]           = useState(null)
+  const [profile, setProfile]     = useState(null)
+  const [hospital, setHospital]   = useState(null)   // ← hospital profile with lat/lng
+  const [loading, setLoading]     = useState(true)
+  const [error, setError]         = useState(null)
 
   useEffect(() => {
     const unsub = onAuthStateChanged(async (firebaseUser) => {
@@ -22,6 +28,7 @@ export function AuthProvider({ children }) {
       setUser(firebaseUser || null)
       setRole(null)
       setProfile(null)
+      setHospital(null)
 
       if (!firebaseUser) {
         setLoading(false)
@@ -33,13 +40,22 @@ export function AuthProvider({ children }) {
         const me = await fetchMe()
         setRole(me?.role || null)
         setProfile(me || null)
+
+        // If hospital user — fetch hospital profile to get lat/lng
+        if (me?.role === 'hospital') {
+          try {
+            const hospitalData = await fetchHospitalProfile()
+            setHospital(hospitalData)
+          } catch (e) {
+            console.warn('Could not fetch hospital profile:', e)
+          }
+        }
       } catch (e) {
         setError(e)
       } finally {
         setLoading(false)
       }
     })
-
     return () => unsub()
   }, [])
 
@@ -64,12 +80,13 @@ export function AuthProvider({ children }) {
       user,
       role,
       profile,
+      hospital,     // ← expose hospital profile
       loading,
       error,
       login,
       logout,
     }),
-    [user, role, profile, loading, error],
+    [user, role, profile, hospital, loading, error],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
@@ -80,4 +97,3 @@ export function useAuth() {
   if (!ctx) throw new Error('useAuth must be used within AuthProvider')
   return ctx
 }
-

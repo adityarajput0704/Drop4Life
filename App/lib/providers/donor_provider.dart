@@ -1,8 +1,31 @@
 import 'package:flutter/material.dart';
 import '../api/donor_service.dart';
 import '../models/donor.dart';
+import '../api/location_service.dart';
+import 'package:flutter/widgets.dart'; 
 
-class DonorProvider extends ChangeNotifier {
+class DonorProvider extends ChangeNotifier with WidgetsBindingObserver {
+
+  DonorProvider() {
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Update location every time donor brings app to foreground
+    if (state == AppLifecycleState.resumed) {
+      updateLocation();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+  
+  final LocationService _locationService = LocationService();
+
   final DonorService _donorService = DonorService();
   Donor? _donor;
   bool _isLoading = false;
@@ -47,5 +70,15 @@ class DonorProvider extends ChangeNotifier {
   void clearProfile() {
     _donor = null;
     notifyListeners();
+  }
+
+  Future<void> updateLocation() async {
+    final position = await _locationService.getLocationPermissionAndPosition();
+    if (position != null) {
+      await _locationService.updateLocationOnBackend(
+        position.latitude,
+        position.longitude,
+      );
+    }
   }
 }
