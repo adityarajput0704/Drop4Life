@@ -119,10 +119,14 @@ class _HomeScreenState extends State<HomeScreen> {
                           children: [
                             const Text('Status',
                                 style: TextStyle(fontWeight: FontWeight.bold)),
-                            const Text('Ready to save a life today?',
-                                style: TextStyle(
-                                    color: AppTheme.textSecondary,
-                                    fontSize: 12)),
+                            Text(
+                              donor != null && donor.isInCooldown
+                                  ? 'Cooldown active — cannot donate'
+                                  : 'Ready to save a life today?',
+                              style: TextStyle(
+                                  color: AppTheme.textSecondary, fontSize: 12
+                              ),
+                            ),
                             const SizedBox(height: 8),
                             if (donor != null)
                               Container(
@@ -159,18 +163,36 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                           ],
                         ),
-                        Switch(
-                          value: donor?.isAvailable ?? false,
-                          activeThumbColor: AppTheme.primaryRed,
-                          onChanged: (val) {
-                            if (donor != null) {
-                              context.read<DonorProvider>().updateProfile({
-                                'availability': val
-                                    ? 'available'
-                                    : 'unavailable', // ← correct field
-                              });
-                            }
-                          },
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Switch(
+                              value: donor?.isAvailable ?? false,
+                              activeThumbColor: AppTheme.primaryRed,
+                              // null = disabled — donor cannot toggle during cooldown
+                              onChanged: (donor != null && donor.isInCooldown)
+                                  ? null
+                                  : (val) {
+                                      if (donor != null) {
+                                        context
+                                            .read<DonorProvider>()
+                                            .updateProfile({
+                                          'availability':
+                                              val ? 'available' : 'unavailable',
+                                        });
+                                      }
+                                    },
+                            ),
+                            if (donor != null && donor.isInCooldown)
+                              Text(
+                                '${donor.daysRemaining} days remaining',
+                                style: const TextStyle(
+                                  color: AppTheme.primaryRed,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                          ],
                         ),
                       ],
                     ),

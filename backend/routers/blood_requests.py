@@ -266,6 +266,13 @@ def accept_blood_request(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only registered donors can accept requests.",
         )
+    
+    if donor.is_in_cooldown:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"You cannot donate during your 90-day cooldown period. "
+                 f"You are eligible again on {donor.cooldown_until.isoformat()}.",
+    )
 
     blood_request = db.query(BloodRequest).filter(BloodRequest.id == request_id).first()
     if not blood_request:

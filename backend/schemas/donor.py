@@ -35,18 +35,23 @@ class DonorUpdate(BaseModel):
 
 
 class DonorResponse(BaseModel):
-    id:           int
-    blood_group:  BloodGroup
-    city:         str
-    age:          int
-    availability: AvailabilityStatus
-    is_active:    bool
-    full_name:    str
-    email:        str
-    phone:        Optional[str]
-    total_donations: int = 0    
-    lives_saved:     int = 0   
-    last_donation:   Optional[str] = None   
+    id:                int
+    blood_group:       BloodGroup
+    city:              str
+    age:               int
+    availability:      AvailabilityStatus
+    is_active:         bool
+    full_name:         str
+    email:             str
+    phone:             Optional[str]
+    total_donations:   int = 0
+    lives_saved:       int = 0
+    last_donation:     Optional[str] = None
+
+    # Cooldown fields — Flutter reads these to lock UI
+    is_in_cooldown:    bool = False
+    cooldown_until:    Optional[str] = None   # ISO date string "2025-07-10"
+    days_remaining:    int = 0                # how many days left
 
     model_config = {"from_attributes": True}
 

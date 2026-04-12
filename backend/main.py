@@ -11,6 +11,7 @@ from backend.core.rate_limiter import limiter
 from fastapi import WebSocket, WebSocketDisconnect
 from backend.core.websocket_manager import manager
 import logging
+from backend.core.scheduler import start_scheduler
 
 
 logging.basicConfig(
@@ -47,6 +48,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 Base.metadata.create_all(bind=engine)
+start_scheduler()
 
 app.include_router(donors.router)
 app.include_router(blood_requests.router)

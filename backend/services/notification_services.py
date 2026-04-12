@@ -9,6 +9,8 @@ from backend.dependencies.__init__ import get_db
 from fastapi import Depends
 from backend.services.fcm_service import send_push_notification
 from backend.models.user import User
+from datetime import date, timedelta
+from backend.models.donor import AvailabilityEnum
 
 logger = logging.getLogger(__name__)
 
@@ -135,10 +137,6 @@ def notify_donation_fulfilled(
     hospital_id: int,
     db: Session,
 ):
-    """
-    Background task — fires after a donation is marked fulfilled.
-    Broadcasts to admin and hospital rooms.
-    """
     try:
         blood_request = db.query(BloodRequest).filter(BloodRequest.id == request_id).first()
         donor = db.query(Donor).filter(Donor.id == donor_id).first()
@@ -146,15 +144,19 @@ def notify_donation_fulfilled(
         if not blood_request or not donor:
             return
 
+        # ── Set cooldown — 90 days from today ──
+        today = date.today()
+        donor.last_donation_date = today
+        donor.cooldown_until     = today + timedelta(days=90)
+        donor.availability       = AvailabilityEnum.UNAVAILABLE
+        db.commit()
+
         logger.info(
-            f"[DONATION FULFILLED] "
-            f"Request ID: {request_id} | "
-            f"Donor ID: {donor_id} | "
-            f"Blood Group: {blood_request.blood_group.value} | "
-            f"Hospital: {blood_request.hospital.name} | "
-            f"Timestamp: {datetime.utcnow().isoformat()}"
+            f"[COOLDOWN SET] Donor ID={donor_id} | "
+            f"Unavailable until {donor.cooldown_until}"
         )
 
+        # rest of your existing broadcast code unchanged...
         event = {
             "type": "REQUEST_FULFILLED",
             "payload": {

@@ -10,25 +10,28 @@ from sqlalchemy import or_
 from backend.core.pagination import PaginationParams, PagedResponse
 from backend.core.rate_limiter import limiter
 from backend.core.cache import get_cached, set_cached, invalidate_cache
+from datetime import date, timedelta
 
 router = APIRouter(prefix="/donors", tags=["Donors"])
 
 
 def build_donor_response(donor: Donor) -> dict:
-    """
-    Merges donor + user fields into a single flat dict.
-    Computes total_donations and lives_saved from the donations relationship.
-    """
-    # Count only fulfilled donations
     fulfilled = [d for d in donor.donations if d.status == "fulfilled"]
     total_donations = len(fulfilled)
-    # Each donation saves approximately 3 lives (standard medical estimate)
     lives_saved = total_donations * 3
 
     last_donation = None
     if fulfilled:
         last = max(fulfilled, key=lambda d: d.updated_at or d.created_at)
         last_donation = (last.updated_at or last.created_at).isoformat()
+
+    # Cooldown calculations
+    today = date.today()
+    is_in_cooldown = donor.is_in_cooldown
+    cooldown_until = donor.cooldown_until.isoformat() if donor.cooldown_until else None
+    days_remaining = 0
+    if is_in_cooldown and donor.cooldown_until:
+        days_remaining = (donor.cooldown_until - today).days
 
     return {
         "id":               donor.id,
@@ -40,11 +43,13 @@ def build_donor_response(donor: Donor) -> dict:
         "full_name":        donor.user.full_name,
         "email":            donor.user.email,
         "phone":            donor.user.phone,
-        "total_donations":  total_donations,  
-        "lives_saved":      lives_saved,       
-        "last_donation":    last_donation,   
-
-
+        "total_donations":  total_donations,
+        "lives_saved":      lives_saved,
+        "last_donation":    last_donation,
+        # Cooldown
+        "is_in_cooldown":   is_in_cooldown,
+        "cooldown_until":   cooldown_until,
+        "days_remaining":   days_remaining,
     }
 
 

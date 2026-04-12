@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SAEnum, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SAEnum, ForeignKey, Date
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from backend.database import Base
@@ -22,23 +22,35 @@ class AvailabilityEnum(str, enum.Enum):
 class Donor(Base):
     __tablename__ = "donors"
 
-    id           = Column(Integer, primary_key=True, index=True)
-    user_id      = Column(String, ForeignKey("users.id"), unique=True, nullable=False)
-
-    # Donor-specific fields only — no name, email, phone (those live on User)
-    blood_group  = Column(SAEnum(BloodGroupEnum), nullable=False)
-    city         = Column(String(100), nullable=False)
-    age          = Column(Integer, nullable=False)
-    availability = Column(
+    id                 = Column(Integer, primary_key=True, index=True)
+    user_id            = Column(String, ForeignKey("users.id"), unique=True, nullable=False)
+    blood_group        = Column(SAEnum(BloodGroupEnum), nullable=False)
+    city               = Column(String(100), nullable=False)
+    age                = Column(Integer, nullable=False)
+    availability       = Column(
         SAEnum(AvailabilityEnum),
         nullable=False,
         default=AvailabilityEnum.AVAILABLE,
     )
-    is_active    = Column(Boolean, default=True, nullable=False)
-    created_at   = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at   = Column(DateTime(timezone=True), onupdate=func.now())
-    user         = relationship("User", back_populates="donor_profile")
-    donations    = relationship("BloodRequest", back_populates="donor")
+    is_active          = Column(Boolean, default=True, nullable=False)
+
+    # Cooldown tracking — both null until first donation
+    last_donation_date = Column(Date, nullable=True)
+    cooldown_until     = Column(Date, nullable=True)
+
+    created_at         = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at         = Column(DateTime(timezone=True), onupdate=func.now())
+
+    user               = relationship("User", back_populates="donor_profile")
+    donations          = relationship("BloodRequest", back_populates="donor")
+
+    @property
+    def is_in_cooldown(self) -> bool:
+        """True if donor is currently within 90-day cooldown period."""
+        from datetime import date
+        if self.cooldown_until is None:
+            return False
+        return date.today() <= self.cooldown_until
 
     def __repr__(self):
         return f"<Donor {self.user_id} ({self.blood_group})>"
