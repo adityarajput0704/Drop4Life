@@ -29,7 +29,7 @@ export async function createRequest(payload) {
 }
 
 export async function cancelRequest(requestId) {
-  const res = await api.post(`/blood-requests/${requestId}/cancel`)
+  const res = await api.patch(`/blood-requests/${requestId}/cancel`)
   return res.data
 }
 
@@ -67,7 +67,7 @@ export async function getRequestById(requestId) {
 }
 
 export async function adminCancelRequest(requestId) {
-  const res = await api.post(`/blood-requests/admin/${requestId}/cancel`)
+  const res = await api.patch(`/blood-requests/admin/${requestId}/cancel`)
   return res.data
 }
 

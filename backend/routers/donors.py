@@ -12,7 +12,8 @@ from backend.core.rate_limiter import limiter
 from backend.core.cache import get_cached, set_cached, invalidate_cache
 from datetime import date
 from math import radians, sin, cos, sqrt, atan2
-
+from fastapi import BackgroundTasks
+from backend.services.notification_services import _broadcast_availability_change
 
 
 router = APIRouter(prefix="/donors", tags=["Donors"])
@@ -148,24 +149,30 @@ def get_my_donor_profile(
 
 @router.patch("/me", response_model=DonorResponse)
 def update_donor_profile(
-    updates: DonorUpdate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    updates:      DonorUpdate,
+    background_tasks: BackgroundTasks,          
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
 ):
     donor = db.query(Donor).filter(Donor.user_id == current_user.id).first()
     if not donor:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No donor profile found.",
-        )
+        raise HTTPException(status_code=404, detail="No donor profile found.")
 
     for field, value in updates.model_dump(exclude_unset=True).items():
         setattr(donor, field, value)
 
     db.commit()
     db.refresh(donor)
-    
     invalidate_cache("donors:*")
+
+    # Broadcast availability change to admin room
+    if 'availability' in updates.model_dump(exclude_unset=True):
+        background_tasks.add_task(
+            _broadcast_availability_change,
+            donor_id=donor.id,
+            full_name=current_user.full_name,
+            availability=donor.availability.value,
+        )
 
     return build_donor_response(donor)
 

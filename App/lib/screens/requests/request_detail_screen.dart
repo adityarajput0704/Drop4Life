@@ -28,7 +28,6 @@ class RequestDetailScreen extends StatelessWidget {
       return;
     }
 
-    // Guard: don't allow accepting already-accepted or fulfilled requests
     final status = request.status.toUpperCase();
     if (status == 'ACCEPTED') {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -51,18 +50,33 @@ class RequestDetailScreen extends StatelessWidget {
       return;
     }
 
-    final success =
+    final result =
         await context.read<RequestProvider>().acceptRequest(request.id);
-    if (success && context.mounted) {
+
+    if (!context.mounted) return;
+
+    if (result == 'success') {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Request Accepted! Please proceed to the hospital.')),
+          content: Text('Request Accepted! Please proceed to the hospital.'),
+          backgroundColor: Colors.green,
+        ),
       );
       context.pop();
-    } else if (context.mounted) {
+    } else if (result == 'already_accepted') {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Failed to accept request. Please try again.')),
+          content: Text('This request was just accepted by another donor.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      context.pop(); // go back — list will refresh automatically
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to accept request. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }

@@ -172,3 +172,18 @@ def notify_donation_fulfilled(
 
     except Exception as e:
         logger.error(f"[DONATION FULFILLED ERROR] request_id={request_id} | error={e}")
+
+def _broadcast_availability_change(donor_id: int, full_name: str, availability: str):
+    try:
+        event = {
+            "type": "DONOR_AVAILABILITY_CHANGED",
+            "payload": {
+                "donor_id":     donor_id,
+                "full_name":    full_name,
+                "availability": availability,
+                "timestamp":    datetime.utcnow().isoformat(),
+            }
+        }
+        asyncio.run(_broadcast("admin", event))
+    except Exception as e:
+        logger.error(f"[AVAILABILITY BROADCAST ERROR] {e}")
