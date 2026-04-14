@@ -2,7 +2,7 @@
 
 from pydantic_settings import BaseSettings
 from functools import lru_cache
-
+from pydantic_settings import SettingsConfigDict
 
 class Settings(BaseSettings):
     """
@@ -12,17 +12,15 @@ class Settings(BaseSettings):
     This is intentional — better to crash loudly than run with wrong config.
     """
     DATABASE_URL: str
-    SECRET_KEY:   str
-    ENVIRONMENT:  str = "development"
-
+    FIREBASE_PROJECT_ID: str
+    ENVIRONMENT : str # default to production if not set
     FIREBASE_SERVICE_ACCOUNT_PATH: str = "backend/firebase-service-account.json"
     REDIS_URL: str = "redis://localhost:6379"
     # App
     app_name: str = "Drop4Life"
     debug: bool = False
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(env_file=".env", extra="forbid")
 
 
 @lru_cache()

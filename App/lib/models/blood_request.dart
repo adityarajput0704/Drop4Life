@@ -1,4 +1,3 @@
-
 class BloodRequest {
   final String id;
   final String hospitalName;
@@ -14,6 +13,8 @@ class BloodRequest {
   final double distance;
   final DateTime createdAt;
   final String? cancellationReason;
+  final double? hospitalLat;
+  final double? hospitalLng;
 
   BloodRequest({
     required this.id,
@@ -30,6 +31,8 @@ class BloodRequest {
     required this.distance,
     required this.createdAt,
     this.cancellationReason,
+    this.hospitalLat,
+    this.hospitalLng,
   });
 
   // Backend sends 'open' — Flutter UI expects 'PENDING'
@@ -74,6 +77,8 @@ class BloodRequest {
           ? DateTime.tryParse(json['created_at']) ?? DateTime.now()
           : DateTime.now(),
       cancellationReason: json['cancellation_reason'],
+      hospitalLat: (json['hospital_lat'] as num?)?.toDouble(),
+      hospitalLng: (json['hospital_lng'] as num?)?.toDouble(),
     );
   }
 

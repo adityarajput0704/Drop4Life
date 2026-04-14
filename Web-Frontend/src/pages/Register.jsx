@@ -115,11 +115,11 @@ export default function Register() {
         },
         { headers: { Authorization: `Bearer ${token}` } },
       )
+      const { signOut } = await import('firebase/auth')
+      await signOut(auth)  // clear firebase session so login page starts fresh
+      setTimeout(() => navigate('/login', { replace: true }))
+ 
 
-      setSuccess(true)
-
-      // Redirect to login after 2 seconds
-      setTimeout(() => navigate('/hospital/dashboard', { replace: true }), 2000)
 
     } catch (err) {
       // If backend fails after Firebase account created — surface the error
@@ -142,23 +142,6 @@ export default function Register() {
     } finally {
       setSubmitting(false)
     }
-  }
-
-  // ── Success state ──────────────────────────────────────────────────────────
-  if (success) {
-    return (
-      <div className="relative min-h-screen bg-[#F7F7F7] text-[#111827]">
-        <div className="mx-auto flex min-h-screen max-w-6xl items-center justify-center px-6 py-12">
-          <div className="w-full max-w-md rounded-2xl border border-[#E5E7EB] bg-white p-8 text-center shadow-sm">
-            <div className="text-4xl">✅</div>
-            <div className="mt-4 text-lg font-extrabold text-[#111827]">Registration Successful</div>
-            <div className="mt-2 text-sm font-semibold text-[#6B7280]">
-              Your hospital has been registered. Redirecting to login…
-            </div>
-          </div>
-        </div>
-      </div>
-    )
   }
 
   return (

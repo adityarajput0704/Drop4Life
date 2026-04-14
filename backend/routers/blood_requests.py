@@ -24,9 +24,17 @@ from backend.services.notification_services import (
     notify_request_accepted,
     notify_donation_fulfilled,
 )
-
+from math import radians, sin, cos, sqrt, atan2
+from backend.models.hospitals import Hospital
 
 router = APIRouter(prefix="/blood-requests", tags=["Blood Requests"])
+
+def _haversine(lat1, lon1, lat2, lon2):
+    R = 6371
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+    dlat, dlon = lat2 - lat1, lon2 - lon1
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    return R * 2 * atan2(sqrt(a), sqrt(1 - a))
 
 
 def build_request_response(req: BloodRequest) -> dict:
@@ -44,6 +52,9 @@ def build_request_response(req: BloodRequest) -> dict:
         "hospital_phone": req.hospital.phone,
         "donor_name":     req.donor.user.full_name if req.donor else None,
         "donor_phone":    req.donor.user.phone     if req.donor else None,
+        # Location — for Flutter map screen
+        "hospital_lat":   req.hospital.latitude,
+        "hospital_lng":   req.hospital.longitude,
     }
 
 
@@ -202,23 +213,14 @@ def cancel_my_acceptance(
 
 @router.get("/matching", response_model=BloodRequestListResponse)
 def get_matching_requests(
-    current_user: User = Depends(get_current_user),
+    radius_km:    float = Query(default=30.0),  
+    current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
 ):
-    """
-    Donor sees open requests compatible with their blood group.
-    Uses compatibility map — O- donor sees all requests.
-    A+ donor sees only A+ and AB+ requests.
-    """
     donor = db.query(Donor).filter(Donor.user_id == current_user.id).first()
     if not donor:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only registered donors can view matching requests.",
-        )
+        raise HTTPException(status_code=403, detail="Only registered donors can view matching requests.")
 
-    # Get all blood groups this donor's blood is compatible with
-    donor_blood = donor.blood_group.value
     compatible_recipient_groups = [
         group
         for group, compatible_donors in {
@@ -231,7 +233,7 @@ def get_matching_requests(
             "O+":  ["O+", "O-"],
             "O-":  ["O-"],
         }.items()
-        if donor_blood in compatible_donors
+        if donor.blood_group.value in compatible_donors
     ]
 
     requests = (
@@ -243,66 +245,94 @@ def get_matching_requests(
         .order_by(BloodRequest.created_at.desc())
         .all()
     )
-    return {"total": len(requests), "items": [build_request_response(r) for r in requests]}
+
+    # ── Strategy 1: GPS available — filter by real distance ──
+    if donor.latitude and donor.longitude:
+        filtered = []
+        for req in requests:
+            hosp = req.hospital
+            if hosp.latitude and hosp.longitude:
+                dist = _haversine(
+                    donor.latitude, donor.longitude,
+                    hosp.latitude,  hosp.longitude,
+                )
+                if dist <= radius_km:
+                    filtered.append(req)
+            # Hospital with no coordinates — skip entirely
+        requests = filtered
+
+    # ── Strategy 2: No GPS — filter by donor's city only ──
+    else:
+        donor_city = donor.city.strip().lower()
+        requests = [
+            req for req in requests
+            if req.hospital.city.strip().lower() == donor_city
+        ]
+
+    return {
+        "total": len(requests),
+        "items": [build_request_response(r) for r in requests],
+    }
 
 
 @router.post("/{request_id}/accept", response_model=BloodRequestResponse)
 def accept_blood_request(
-    request_id:   int,
-    background_tasks: BackgroundTasks,              
-    current_user: User = Depends(get_current_user),
-    db:           Session = Depends(get_db),
+    request_id:       int,
+    background_tasks: BackgroundTasks,
+    current_user:     User    = Depends(get_current_user),
+    db:               Session = Depends(get_db),
 ):
-    """
-    Donor accepts an open request.
-    RBAC checks:
-    - Must be a registered donor
-    - Request must be OPEN
-    - Donor must be blood-compatible
-    """
     donor = db.query(Donor).filter(Donor.user_id == current_user.id).first()
     if not donor:
+        raise HTTPException(status_code=403, detail="Only registered donors can accept requests.")
+
+    if donor.is_in_cooldown:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only registered donors can accept requests.",
+            status_code=403,
+            detail=f"You cannot donate during your 90-day cooldown period. "
+                   f"Eligible again on {donor.cooldown_until.isoformat()}.",
         )
 
-    blood_request = db.query(BloodRequest).filter(BloodRequest.id == request_id).first()
+    # WITH_FOR_UPDATE locks this row until transaction completes
+    # If two donors hit this simultaneously, second one waits
+    # then sees status=ACCEPTED and gets a 409
+    blood_request = (
+        db.query(BloodRequest)
+        .filter(BloodRequest.id == request_id)
+        .with_for_update()          # ← database row lock
+        .first()
+    )
     if not blood_request:
         raise HTTPException(status_code=404, detail="Blood request not found.")
 
-    # State guard
     if blood_request.status != RequestStatusEnum.OPEN:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=409,
             detail=f"This request is already {blood_request.status.value}.",
         )
 
-    # Compatibility guard
     compatible_donors = get_compatible_donor_groups(blood_request.blood_group.value)
     if donor.blood_group.value not in compatible_donors:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Your blood group {donor.blood_group.value} is not compatible with this request ({blood_request.blood_group.value}).",
+            status_code=400,
+            detail=f"Your blood group {donor.blood_group.value} is not compatible.",
         )
 
     blood_request.donor_id = donor.id
     blood_request.status   = RequestStatusEnum.ACCEPTED
     db.commit()
     db.refresh(blood_request)
-
     invalidate_cache("blood_requests:*")
 
     background_tasks.add_task(
-    notify_request_accepted,
-    request_id=blood_request.id,
-    hospital_id=blood_request.hospital_id,
-    donor_name=current_user.full_name,
-    blood_group=blood_request.blood_group.value,
-)
-    
-    return build_request_response(blood_request)
+        notify_request_accepted,
+        request_id=blood_request.id,
+        hospital_id=blood_request.hospital_id,
+        donor_name=current_user.full_name,
+        blood_group=blood_request.blood_group.value,
+    )
 
+    return build_request_response(blood_request)
 
 @router.patch("/{request_id}/fulfil", response_model=BloodRequestResponse)
 def fulfil_blood_request(

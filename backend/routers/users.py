@@ -10,9 +10,11 @@ from backend.models.user import User
 from backend.models.hospitals import Hospital
 from backend.schemas.user import UserCreate, UserUpdate, UserResponse
 import uuid
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/users", tags=["Users"])
-
+class FCMTokenUpdate(BaseModel):
+    fcm_token: str
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register_user(
@@ -133,5 +135,22 @@ def deactivate_user(
     db.commit()
     db.refresh(user)
     return user
+
+
+
+
+@router.post("/fcm-token", status_code=200)
+def save_fcm_token(
+    data: FCMTokenUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Flutter calls this on app start after getting the FCM token.
+    Saves the device token so backend can send push notifications.
+    """
+    current_user.fcm_token = data.fcm_token
+    db.commit()
+    return {"message": "FCM token saved successfully"}
 
 

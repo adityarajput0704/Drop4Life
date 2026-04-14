@@ -14,6 +14,7 @@ class User(Base):
     blood_group     = Column(String, nullable=True)
     role            = Column(String, default="donor", nullable=False)
     is_active       = Column(Boolean, default=True)
+    fcm_token    = Column(String, nullable=True)          # ← ADD THIS LINE ONLY
     created_at      = Column(DateTime(timezone=True), server_default=func.now())
     updated_at      = Column(DateTime(timezone=True), onupdate=func.now())
 
