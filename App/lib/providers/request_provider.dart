@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import '../api/request_service.dart';
 import '../models/blood_request.dart';
-import '../api/websocket_service.dart';    // ← new import
+import '../api/websocket_service.dart'; 
+import 'package:dio/dio.dart';
 
 class RequestProvider extends ChangeNotifier {
   final RequestService _requestService = RequestService();
-  final WebSocketService _wsService = WebSocketService();   // ← new
+  final WebSocketService _wsService = WebSocketService(); // ← new
 
   List<BloodRequest> _requests = [];
   List<BloodRequest> _urgentRequests = [];
@@ -124,16 +125,24 @@ class RequestProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> acceptRequest(String requestId) async {
+  Future<String> acceptRequest(String requestId) async {
     try {
       await _requestService.acceptRequest(requestId);
-      // Remove from list if accepted, or just fetch again
       _requests.removeWhere((r) => r.id == requestId);
       _urgentRequests.removeWhere((r) => r.id == requestId);
       notifyListeners();
-      return true;
+      return 'success';
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 409) {
+        // Request already accepted by another donor
+        // Refresh lists so UI shows correct status
+        fetchRequests(refresh: true);
+        fetchUrgentRequests();
+        return 'already_accepted';
+      }
+      return 'failed';
     } catch (e) {
-      return false;
+      return 'failed';
     }
   }
 

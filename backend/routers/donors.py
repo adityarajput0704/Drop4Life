@@ -1,34 +1,78 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from backend.dependencies.__init__ import get_db
-from backend.models.donor import Donor
+from backend.models.donor import AvailabilityEnum, Donor
 from backend.models.user import User
 from backend.models.blood_requests import BloodRequest
-from backend.schemas.donor import DonorCreate, DonorUpdate, DonorResponse, DonorFilterParams
+from backend.schemas.donor import DonorCreate, DonorUpdate, DonorResponse, DonorFilterParams, LocationUpdate
 from backend.dependencies.auth import get_current_user
 from sqlalchemy import or_
 from backend.core.pagination import PaginationParams, PagedResponse
 from backend.core.rate_limiter import limiter
 from backend.core.cache import get_cached, set_cached, invalidate_cache
+from datetime import date
+from math import radians, sin, cos, sqrt, atan2
+from fastapi import BackgroundTasks
+from backend.services.notification_services import _broadcast_availability_change
+
 
 router = APIRouter(prefix="/donors", tags=["Donors"])
 
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """
+    Returns distance in kilometers between two GPS coordinates.
+    Uses the Haversine formula — accurate enough for city-level proximity.
+    No external API needed.
+    """
+    R = 6371  # Earth radius in km
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    return R * 2 * atan2(sqrt(a), sqrt(1 - a))
 
-def build_donor_response(donor: Donor) -> dict:
+
+@router.patch("/me/location", status_code=200)
+def update_my_location(
+    data:         LocationUpdate,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
     """
-    Merges donor + user fields into a single flat dict.
-    Computes total_donations and lives_saved from the donations relationship.
+    Flutter calls this after getting GPS coordinates.
+    Silently updates donor lat/long — no response body needed.
     """
-    # Count only fulfilled donations
+    donor = db.query(Donor).filter(Donor.user_id == current_user.id).first()
+    if not donor:
+        raise HTTPException(status_code=404, detail="Donor profile not found.")
+
+    donor.latitude  = data.latitude
+    donor.longitude = data.longitude
+    db.commit()
+
+    invalidate_cache("donors:*")
+
+    return {"message": "Location updated"}
+
+def build_donor_response(donor: Donor, distance_km: float = None) -> dict:
     fulfilled = [d for d in donor.donations if d.status == "fulfilled"]
     total_donations = len(fulfilled)
-    # Each donation saves approximately 3 lives (standard medical estimate)
-    lives_saved = total_donations * 3
+
+    total_units = sum(d.units_needed for d in fulfilled)
+    lives_saved = total_units
 
     last_donation = None
     if fulfilled:
         last = max(fulfilled, key=lambda d: d.updated_at or d.created_at)
         last_donation = (last.updated_at or last.created_at).isoformat()
+
+    # Cooldown calculations
+    today = date.today()
+    is_in_cooldown = donor.is_in_cooldown
+    cooldown_until = donor.cooldown_until.isoformat() if donor.cooldown_until else None
+    days_remaining = 0
+    if is_in_cooldown and donor.cooldown_until:
+        days_remaining = (donor.cooldown_until - today).days
 
     return {
         "id":               donor.id,
@@ -40,11 +84,17 @@ def build_donor_response(donor: Donor) -> dict:
         "full_name":        donor.user.full_name,
         "email":            donor.user.email,
         "phone":            donor.user.phone,
-        "total_donations":  total_donations,  
-        "lives_saved":      lives_saved,       
-        "last_donation":    last_donation,   
-
-
+        "total_donations":  total_donations,
+        "lives_saved":      lives_saved,
+        "last_donation":    last_donation,
+        # Cooldown
+        "is_in_cooldown":   is_in_cooldown,
+        "cooldown_until":   cooldown_until,
+        "days_remaining":   days_remaining,
+        # Location
+        "latitude":        donor.latitude,
+        "longitude":       donor.longitude,
+        "distance_km":     round(distance_km, 2) if distance_km is not None else None,
     }
 
 
@@ -99,24 +149,30 @@ def get_my_donor_profile(
 
 @router.patch("/me", response_model=DonorResponse)
 def update_donor_profile(
-    updates: DonorUpdate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    updates:      DonorUpdate,
+    background_tasks: BackgroundTasks,          
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
 ):
     donor = db.query(Donor).filter(Donor.user_id == current_user.id).first()
     if not donor:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No donor profile found.",
-        )
+        raise HTTPException(status_code=404, detail="No donor profile found.")
 
     for field, value in updates.model_dump(exclude_unset=True).items():
         setattr(donor, field, value)
 
     db.commit()
     db.refresh(donor)
-    
     invalidate_cache("donors:*")
+
+    # Broadcast availability change to admin room
+    if 'availability' in updates.model_dump(exclude_unset=True):
+        background_tasks.add_task(
+            _broadcast_availability_change,
+            donor_id=donor.id,
+            full_name=current_user.full_name,
+            availability=donor.availability.value,
+        )
 
     return build_donor_response(donor)
 
@@ -129,55 +185,67 @@ def list_donors(
     filters:    DonorFilterParams = Depends(),
     db:         Session = Depends(get_db),
 ):
-    """Public — paginated donor list with optional filters."""
+    # Skip cache if location filter is active — results are user-specific
+    use_cache = not (filters.lat and filters.lng)
 
-    # Build a unique cache key from all query params
     cache_key = (
-        f"donors:"
-        f"page={pagination.page}:"
-        f"size={pagination.page_size}:"
-        f"bg={filters.blood_group}:"
-        f"city={filters.city}:"
-        f"avail={filters.is_available}:"
-        f"search={filters.search}"
+        f"donors:page={pagination.page}:size={pagination.page_size}:"
+        f"bg={filters.blood_group}:city={filters.city}:"
+        f"avail={filters.is_available}:search={filters.search}"
     )
 
-    # Try cache first
-    cached = get_cached(cache_key)
-    if cached:
-        return cached
+    if use_cache:
+        cached = get_cached(cache_key)
+        if cached:
+            return cached
 
-    # Cache miss — query DB
     query = db.query(Donor).filter(Donor.is_active == True)
 
     if filters.blood_group:
         query = query.filter(Donor.blood_group == filters.blood_group)
-
     if filters.city:
         query = query.filter(Donor.city.ilike(f"%{filters.city}%"))
-
     if filters.is_available is not None:
-        query = query.filter(Donor.availability == filters.is_available)
-
+        if filters.is_available is True:
+         av = AvailabilityEnum.AVAILABLE
+        else:
+            av = AvailabilityEnum.UNAVAILABLE
+        query = query.filter(Donor.availability == av)
     if filters.search:
         search_term = f"%{filters.search}%"
         query = query.join(User, Donor.user_id == User.id).filter(
-            or_(
-                User.full_name.ilike(search_term),
-                User.phone.ilike(search_term),
-            )
+            or_(User.full_name.ilike(search_term), User.phone.ilike(search_term))
         )
 
-    total = query.count()
-    donors = query.offset(pagination.offset).limit(pagination.page_size).all()
+    all_donors = query.all()
 
-    result = PagedResponse.create(
-        items=[build_donor_response(d) for d in donors],
-        total=total,
-        params=pagination
-    )
+    # ── Proximity filter (Haversine) ──
+    if filters.lat and filters.lng and filters.radius_km:
+        donors_with_distance = []
+        for donor in all_donors:
+            if donor.latitude is None or donor.longitude is None:
+                continue   # skip donors who haven't shared location
+            dist = haversine_distance(
+                filters.lat, filters.lng,
+                donor.latitude, donor.longitude
+            )
+            if dist <= filters.radius_km:
+                donors_with_distance.append((donor, dist))
 
-    # Store in cache for 60 seconds
-    set_cached(cache_key, result.model_dump(), ttl_seconds=60)
+        # Sort by distance — closest first
+        donors_with_distance.sort(key=lambda x: x[1])
+
+        total = len(donors_with_distance)
+        paginated = donors_with_distance[pagination.offset: pagination.offset + pagination.page_size]
+        items = [build_donor_response(d, dist) for d, dist in paginated]
+    else:
+        total = len(all_donors)
+        paginated = all_donors[pagination.offset: pagination.offset + pagination.page_size]
+        items = [build_donor_response(d) for d in paginated]
+
+    result = PagedResponse.create(items=items, total=total, params=pagination)
+
+    if use_cache:
+        set_cached(cache_key, result.model_dump(), ttl_seconds=60)
 
     return result

@@ -6,24 +6,40 @@ import '../../models/blood_request.dart';
 import '../../providers/request_provider.dart';
 import '../../widgets/blood_badge.dart';
 import '../../widgets/urgency_badge.dart';
+import '../../providers/donor_provider.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import '../map/hospital_map_screen.dart';
 
 class RequestDetailScreen extends StatelessWidget {
   final BloodRequest request;
 
   const RequestDetailScreen({super.key, required this.request});
 
-  void _acceptRequest(BuildContext context) async {
-    // Guard: don't allow accepting already-accepted or fulfilled requests
+  void _acceptRequest(BuildContext context, bool isInCooldown) async {
+    if (isInCooldown) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('You cannot donate during your 90-day cooldown period.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     final status = request.status.toUpperCase();
     if (status == 'ACCEPTED') {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This request has already been accepted.')),
+        const SnackBar(
+            content: Text('This request has already been accepted.')),
       );
       return;
     }
     if (status == 'FULFILLED') {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This request has already been fulfilled.')),
+        const SnackBar(
+            content: Text('This request has already been fulfilled.')),
       );
       return;
     }
@@ -34,22 +50,41 @@ class RequestDetailScreen extends StatelessWidget {
       return;
     }
 
-    final success = await context.read<RequestProvider>().acceptRequest(request.id);
-    if (success && context.mounted) {
+    final result =
+        await context.read<RequestProvider>().acceptRequest(request.id);
+
+    if (!context.mounted) return;
+
+    if (result == 'success') {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Request Accepted! Please proceed to the hospital.')),
+        const SnackBar(
+          content: Text('Request Accepted! Please proceed to the hospital.'),
+          backgroundColor: Colors.green,
+        ),
       );
       context.pop();
-    } else if (context.mounted) {
+    } else if (result == 'already_accepted') {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to accept request. Please try again.')),
+        const SnackBar(
+          content: Text('This request was just accepted by another donor.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      context.pop(); // go back — list will refresh automatically
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to accept request. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
 
   // Returns true if this request can still be accepted
-  bool get _canAccept {
+  bool _canAccept(bool isInCooldown) {
     final status = request.status.toUpperCase();
+    if (isInCooldown) return false;
     return status == 'PENDING';
   }
 
@@ -66,7 +101,8 @@ class RequestDetailScreen extends StatelessWidget {
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
-          IconButton(icon: const Icon(Icons.notifications_none), onPressed: () {}),
+          IconButton(
+              icon: const Icon(Icons.notifications_none), onPressed: () {}),
           const Padding(
             padding: EdgeInsets.only(right: 16.0),
             child: CircleAvatar(
@@ -103,12 +139,16 @@ class RequestDetailScreen extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               '${request.unitsNeeded} Units Needed',
-              style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: 32),
+              style: Theme.of(context)
+                  .textTheme
+                  .displayLarge
+                  ?.copyWith(fontSize: 32),
             ),
             const SizedBox(height: 8),
             Text(
               request.hospitalName,
-              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 16),
+              style:
+                  const TextStyle(color: AppTheme.textSecondary, fontSize: 16),
             ),
             const SizedBox(height: 32),
 
@@ -130,30 +170,85 @@ class RequestDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
 
-            Container(
-              height: 150,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: AppTheme.border,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.map, size: 48, color: AppTheme.textSecondary),
-                    SizedBox(height: 8),
-                    Text(
-                      'Map View Placeholder',
-                      style: TextStyle(
-                        color: AppTheme.textSecondary,
-                        fontWeight: FontWeight.bold,
-                      ),
+            Builder(builder: (context) {
+              final lat = request.hospitalLat;
+              final lng = request.hospitalLng;
+
+              if (lat == null || lng == null) {
+                return Container(
+                  height: 150,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: AppTheme.border,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Center(
+                    child: Text('Map not available',
+                        style: TextStyle(color: AppTheme.textSecondary)),
+                  ),
+                );
+              }
+
+              return GestureDetector(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => HospitalMapScreen(
+                      request: request,
+                      hospitalLat: lat,
+                      hospitalLng: lng,
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: SizedBox(
+                    height: 160,
+                    child: Stack(
+                      children: [
+                        FlutterMap(
+                          options: MapOptions(
+                            initialCenter: LatLng(lat, lng),
+                            initialZoom: 14,
+                            interactionOptions: const InteractionOptions(
+                              flags: InteractiveFlag.none, // static preview
+                            ),
+                          ),
+                          children: [
+                            TileLayer(
+                              urlTemplate:
+                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                              userAgentPackageName: 'com.example.drop4life',
+                            ),
+                            MarkerLayer(markers: [
+                              Marker(
+                                point: LatLng(lat, lng),
+                                width: 40,
+                                height: 40,
+                                child: const Icon(Icons.local_hospital,
+                                    color: Colors.red, size: 36),
+                              ),
+                            ]),
+                          ],
+                        ),
+                        // Tap to expand overlay
+                        Positioned.fill(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.05),
+                            ),
+                            child: const Center(
+                              child: Icon(Icons.fullscreen,
+                                  color: Colors.white, size: 32),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
             const SizedBox(height: 16),
 
             Container(
@@ -172,7 +267,8 @@ class RequestDetailScreen extends StatelessWidget {
                       request.contactNumber.isNotEmpty
                           ? request.contactNumber
                           : 'Not provided',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                   ),
                   ElevatedButton(
@@ -192,7 +288,8 @@ class RequestDetailScreen extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               decoration: const BoxDecoration(
                 color: AppTheme.surfaceCard,
-                border: Border(left: BorderSide(color: AppTheme.primaryRed, width: 4)),
+                border: Border(
+                    left: BorderSide(color: AppTheme.primaryRed, width: 4)),
               ),
               child: const Text(
                 '"Please arrive at the emergency reception and mention the reference number. Ensure you have eaten and are well hydrated."',
@@ -205,31 +302,51 @@ class RequestDetailScreen extends StatelessWidget {
             const SizedBox(height: 32),
 
             // Accept button — greyed out if request is not PENDING
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _canAccept ? () => _acceptRequest(context) : null,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  // Visual indicator when disabled
-                  disabledBackgroundColor: AppTheme.surfaceCard,
-                ),
-                child: Text(
-                  _canAccept
-                      ? '🤝 Accept This Request'
-                      : '✅ ${request.status[0]}${request.status.substring(1).toLowerCase()}',
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ),
+            Consumer<DonorProvider>(
+              builder: (context, donorProvider, _) {
+                final isInCooldown = donorProvider.donor?.isInCooldown ?? false;
+                final daysRemaining = donorProvider.donor?.daysRemaining ?? 0;
+                final canAccept = _canAccept(isInCooldown);
+
+                return Column(
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: canAccept
+                            ? () => _acceptRequest(context, isInCooldown)
+                            : null,
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          disabledBackgroundColor: AppTheme.surfaceCard,
+                        ),
+                        child: Text(
+                          isInCooldown
+                              ? 'Unavailable — Cooldown Active'
+                              : canAccept
+                                  ? '🤝 Accept This Request'
+                                  : '✅ ${request.status[0]}${request.status.substring(1).toLowerCase()}',
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      isInCooldown
+                          ? 'You can donate again in $daysRemaining days.'
+                          : canAccept
+                              ? 'By accepting, you commit to arriving within 4 hours.'
+                              : 'This request is no longer available for acceptance.',
+                      style: const TextStyle(
+                          color: AppTheme.textSecondary, fontSize: 12),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                );
+              },
             ),
-            const SizedBox(height: 12),
-            Text(
-              _canAccept
-                  ? 'By accepting, you commit to arriving within 4 hours.'
-                  : 'This request is no longer available for acceptance.',
-              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-              textAlign: TextAlign.center,
-            ),
+
             const SizedBox(height: 32),
           ],
         ),
@@ -278,12 +395,14 @@ class RequestDetailScreen extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   title,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 16),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 14),
+                  style: const TextStyle(
+                      color: AppTheme.textSecondary, fontSize: 14),
                 ),
               ],
             ),

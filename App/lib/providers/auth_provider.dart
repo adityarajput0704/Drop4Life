@@ -3,6 +3,7 @@ import '../api/auth_service.dart';
 import '../api/user_service.dart';
 import '../models/user.dart';
 import '../api/dio_client.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
@@ -39,11 +40,27 @@ class AuthProvider extends ChangeNotifier {
     try {
       _currentUser = await _userService.getMyUser();
       notifyListeners();
+
+      // Save FCM token to backend — runs silently after every login/session restore
+      _saveFcmTokenSilently();
+
       return _currentUser?.role;
     } catch (e) {
-      // 404 = Firebase auth OK but no DB record (new user)
       debugPrint('fetchUserRole error: $e');
-      return null; // null = not registered yet
+      return null;
+    }
+  }
+
+  Future<void> _saveFcmTokenSilently() async {
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token != null) {
+        await saveFcmToken(token);
+        debugPrint('FCM token saved to backend');
+      }
+    } catch (e) {
+      // Non-critical — never block login flow for this
+      debugPrint('FCM token save failed (non-critical): $e');
     }
   }
 
@@ -62,7 +79,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// Returns: 'donor', 'admin', 'hospital', 'unregistered', or null on failure  
+  /// Returns: 'donor', 'admin', 'hospital', 'unregistered', or null on failure
   Future<String?> loginWithGoogle() async {
     try {
       _setLoading(true);
@@ -100,41 +117,42 @@ class AuthProvider extends ChangeNotifier {
     required String phone,
   }) async {
     try {
-     _setLoading(true);
-     _setError(null);
+      _setLoading(true);
+      _setError(null);
 
-    // Get email from the Firebase user who just registered
+      // Get email from the Firebase user who just registered
       final firebaseUser = _authService.getCurrentFirebaseUser();
-     if (firebaseUser == null) {
-       _setError('Session expired. Please try again.');
-       return false;
-     }
+      if (firebaseUser == null) {
+        _setError('Session expired. Please try again.');
+        return false;
+      }
 
-    // Step 1: Register user in our DB — email comes from Firebase, not form
+      // Step 1: Register user in our DB — email comes from Firebase, not form
       await DioClient.instance.post('/users/register', data: {
         'full_name': fullName,
-        'email': firebaseUser.email ?? '',  // ← THIS was missing
+        'email': firebaseUser.email ?? '', // ← THIS was missing
         'phone': phone,
         'blood_group': bloodGroup,
       });
 
-    // Step 2: Register as donor
+      // Step 2: Register as donor
       await DioClient.instance.post('/donors/register', data: {
-       'city': city,
-       'age': age,
-       'blood_group': bloodGroup,
+        'city': city,
+        'age': age,
+        'blood_group': bloodGroup,
       });
 
-    // Step 3: Fetch role to confirm
+      // Step 3: Fetch role to confirm
       await _fetchUserRole();
       return true;
     } catch (e) {
       _setError(e.toString());
       return false;
     } finally {
-     _setLoading(false);
+      _setLoading(false);
     }
   }
+
   Future<void> logout() async {
     await _authService.logout();
     _currentUser = null;

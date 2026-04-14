@@ -7,9 +7,35 @@ from backend.models.hospitals import Hospital
 from backend.models.user import User
 from backend.schemas.hospital import HospitalCreate, HospitalResponse, HospitalUpdate
 from backend.dependencies.auth import verify_firebase_token, get_current_hospital, require_admin
+from backend.services.geocoding_service import geocode_address
+import logging
+from pydantic import BaseModel as PydanticBase
 
+class HospitalLocationUpdate(PydanticBase):
+    latitude:  float
+    longitude: float
+    
 router = APIRouter(prefix="/hospitals", tags=["Hospitals"])
+logger = logging.getLogger(__name__)
 
+@router.patch("/me/location", status_code=200)
+def update_hospital_location(
+    data:             HospitalLocationUpdate,
+    current_hospital: Hospital = Depends(get_current_hospital),
+    db:               Session  = Depends(get_db),
+):
+    """
+    Hospital manually sets their precise location.
+    More accurate than geocoding for Indian addresses.
+    """
+    current_hospital.latitude  = data.latitude
+    current_hospital.longitude = data.longitude
+    db.commit()
+    return {
+        "message":   "Location updated",
+        "latitude":  current_hospital.latitude,
+        "longitude": current_hospital.longitude,
+    }
 
 @router.post("/register", response_model=HospitalResponse, status_code=status.HTTP_201_CREATED)
 def register_hospital(
@@ -46,20 +72,52 @@ def register_hospital(
         )
 
     hospital = Hospital(
-        firebase_uid    = firebase_uid,
-        email           = firebase_email,
-        name            = data.name,
-        phone           = data.phone,
-        address         = data.address,
-        city            = data.city,
-        registration_no = data.registration_no,
-        is_verified     = True,   # auto-approved
+    firebase_uid    = firebase_uid,
+    email           = firebase_email,
+    name            = data.name,
+    phone           = data.phone,
+    address         = data.address,
+    city            = data.city,
+    registration_no = data.registration_no,
+    is_verified     = False,
     )
+
+    # Geocode address — runs synchronously, fine for registration
+    coords = geocode_address(data.address, data.city)
+    if coords:
+        hospital.latitude, hospital.longitude = coords
+    else:
+        logger.warning(f"[HOSPITAL REGISTER] Could not geocode address for {data.name}")
 
     db.add(hospital)
     db.commit()
     db.refresh(hospital)
     return hospital
+
+@router.post("/me/geocode", status_code=200)
+def geocode_my_hospital(
+    current_hospital: Hospital = Depends(get_current_hospital),
+    db:               Session  = Depends(get_db),
+):
+    """
+    One-time endpoint — geocodes existing hospital that registered
+    before lat/long was added. Call once per hospital.
+    """
+    coords = geocode_address(current_hospital.address, current_hospital.city)
+    if not coords:
+        raise HTTPException(
+            status_code=422,
+            detail="Could not geocode this address. Try updating your address first."
+        )
+
+    current_hospital.latitude, current_hospital.longitude = coords
+    db.commit()
+
+    return {
+        "message":   "Location set successfully",
+        "latitude":  current_hospital.latitude,
+        "longitude": current_hospital.longitude,
+    }
 
 
 @router.get("/me", response_model=HospitalResponse)

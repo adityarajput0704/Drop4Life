@@ -1,8 +1,11 @@
+import 'package:flutter/material.dart';
+
 import 'dio_client.dart';
 import '../models/blood_request.dart';
 import '../config/app_config.dart';
 import '../mock/mock_data.dart';
 import 'package:dio/dio.dart';
+import 'package:geolocator/geolocator.dart';
 
 class RequestResponse {
   final List<BloodRequest> items;
@@ -80,21 +83,42 @@ class RequestService {
   }
 
   Future<List<BloodRequest>> getMatchingRequests() async {
-    if (AppConfig.useMockData) {
-      await Future.delayed(const Duration(seconds: 1));
-      return MockData.activeRequests.take(4).toList();
-    }
-    try {
-      final response = await DioClient.instance.get('/blood-requests/matching');
-      return (response.data['items'] as List)
-          .map((i) => BloodRequest.fromJson(i))
-          .toList();
-    } on DioException catch (e) {
-      // 403 = user is not a donor yet — return empty list silently
-      if (e.response?.statusCode == 403) return [];
-      rethrow;
-    }
+  if (AppConfig.useMockData) {
+    await Future.delayed(const Duration(seconds: 1));
+    return MockData.activeRequests.take(4).toList();
   }
+
+  try {
+    // Get current position for location-based filtering
+    Map<String, dynamic> queryParams = {};
+
+    try {
+      await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.low,   // low accuracy = faster
+          timeLimit: Duration(seconds: 5),
+        ),
+      );
+      queryParams['radius_km'] = 50;
+      // Backend uses donor's stored lat/lng — no need to send coordinates
+      // radius_km param activates the location filter on backend
+    } catch (e) {
+        debugPrint('Location unavailable for matching — showing all compatible');
+      // No radius_km = backend returns all compatible regardless of distance
+    }
+
+    final response = await DioClient.instance.get(
+      '/blood-requests/matching',
+      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+    );
+    return (response.data['items'] as List)
+        .map((i) => BloodRequest.fromJson(i))
+        .toList();
+  } on DioException catch (e) {
+    if (e.response?.statusCode == 403) return [];
+    rethrow;
+  }
+}
 
   Future<void> acceptRequest(String requestId) async {
     if (AppConfig.useMockData) {

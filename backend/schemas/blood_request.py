@@ -52,7 +52,9 @@ class BloodRequestResponse(BaseModel):
     hospital_name: str
     hospital_city: str
     hospital_phone: str
-
+    # Hospital location — for Flutter map
+    hospital_lat:   Optional[float] = None    
+    hospital_lng:   Optional[float] = None   
     # Donor info — null until accepted
     donor_name:    Optional[str] = None
     donor_phone:   Optional[str] = None

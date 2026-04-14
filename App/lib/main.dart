@@ -17,12 +17,88 @@ import 'screens/requests/request_detail_screen.dart';
 import 'screens/history/history_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'models/blood_request.dart';
-// import 'firebase_options.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+
+
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Flutter handles background messages automatically
+  // No action needed here — the OS shows the notification
+  debugPrint('Background FCM message: ${message.messageId}');
+}
+
+Future<void> _createNotificationChannel() async {
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+      FlutterLocalNotificationsPlugin();
+
+  // Android channel — HIGH importance = banner + sound
+  const AndroidNotificationChannel channel = AndroidNotificationChannel(
+    'blood_requests',           // must match channel_id in fcm_service.py
+    'Blood Request Alerts',     // shown in Android settings
+    description: 'Urgent blood donation request notifications',
+    importance: Importance.max, // MAX = heads-up banner + sound
+    playSound: true,
+    enableVibration: true,
+  );
+
+await flutterLocalNotificationsPlugin
+    .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>()   
+    ?.createNotificationChannel(channel);
+
+  debugPrint('Notification channel created');
+}
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   try {
     await Firebase.initializeApp();
+
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+    // Request notification permission (iOS requires explicit permission)
+    final messaging = FirebaseMessaging.instance;
+    await messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    await _createNotificationChannel();
+
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    final notification = message.notification;
+    final android = message.notification?.android;
+
+    if (notification != null && android != null) {
+      FlutterLocalNotificationsPlugin().show(
+        id: notification.hashCode,
+        title: notification.title,
+        body: notification.body,
+        notificationDetails: NotificationDetails(
+          android: AndroidNotificationDetails(
+            'blood_requests',
+            'Blood Request Alerts',
+            importance: Importance.max,
+            priority: Priority.high,
+            playSound: true,
+            enableVibration: true,
+          ),
+        ),
+      );
+    }
+  });
+
+    // Get FCM token and send to backend
+    // We do this after login — see AuthProvider section below
+    // For now just print it
+    final token = await messaging.getToken();
+    debugPrint('FCM Token: $token');
+
   } catch (e) {
     debugPrint('Firebase init error: $e');
   }

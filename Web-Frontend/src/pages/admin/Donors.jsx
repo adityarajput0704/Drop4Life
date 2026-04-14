@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import PageLayout from '../../components/PageLayout.jsx'
 import LoadingSpinner from '../../components/LoadingSpinner.jsx'
 import Pagination from '../../components/Pagination.jsx'
 import BloodBadge from '../../components/BloodBadge.jsx'
 import { listDonors } from '../../api/donors'
+import { useWebSocket } from '../../hooks/useWebSockets.js'
+
 
 function Avatar({ name }) {
   const initials = String(name || '?')
@@ -64,6 +66,18 @@ export default function Donors() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const handleWsEvent = useCallback((event) => {
+    if (event.type === 'DONOR_AVAILABILITY_CHANGED') {
+      // Refresh donor list silently
+      setPage(p => p) // trigger useEffect re-run
+      // Or more explicitly:
+      listDonors({ page, pageSize: 10, search: search.trim() || undefined })
+        .then(setData)
+        .catch(console.error)
+    }
+  }, [page, search])
+
+  useWebSocket('admin', handleWsEvent)
 
   useEffect(() => {
     let alive = true
