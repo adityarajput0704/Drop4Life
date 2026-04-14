@@ -12,8 +12,9 @@ from fastapi import WebSocket, WebSocketDisconnect
 from backend.core.websocket_manager import manager
 import logging
 from backend.core.scheduler import start_scheduler
+from backend.config import get_settings  
 
-
+settings = get_settings() 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -31,10 +32,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],       # Dev mode — we restrict this in Phase 9
-    allow_credentials=False,   # MUST be False when origins=["*"]
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # In dev: reads from .env → "http://localhost:3000,http://localhost:5173"
+    # In prod: reads from Render env vars → "https://yourapp.com"
+    allow_origins=settings.allowed_origins_list,
+    allow_credentials=True,    # ← Now safe because origins are explicit
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # Attach limiter to app state
@@ -47,7 +50,6 @@ app.add_middleware(SlowAPIMiddleware)
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
-Base.metadata.create_all(bind=engine)
 start_scheduler()
 
 app.include_router(donors.router)
