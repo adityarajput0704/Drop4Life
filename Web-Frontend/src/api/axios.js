@@ -77,7 +77,12 @@ api.interceptors.response.use(
   (error) => {
     const status = error?.response?.status
 
-    if (status === 401) {
+    // Only redirect on 401 if NOT an auth-resolution call
+    // Auth context handles /hospitals/me and /users/me failures itself
+    const url = error?.config?.url || ''
+    const isAuthResolution = url.includes('/hospitals/me') || url.includes('/users/me')
+
+    if (status === 401 && !isAuthResolution) {
       window.location.href = '/login'
     }
 

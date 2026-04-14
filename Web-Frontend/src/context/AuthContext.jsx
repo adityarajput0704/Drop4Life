@@ -15,12 +15,12 @@ async function fetchHospitalProfile() {
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser]           = useState(null)
-  const [role, setRole]           = useState(null)
-  const [profile, setProfile]     = useState(null)
-  const [hospital, setHospital]   = useState(null)   // ← hospital profile with lat/lng
-  const [loading, setLoading]     = useState(true)
-  const [error, setError]         = useState(null)
+  const [user, setUser]       = useState(null)
+  const [role, setRole]       = useState(null)
+  const [profile, setProfile] = useState(null)
+  const [hospital, setHospital] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState(null)
 
   useEffect(() => {
     const unsub = onAuthStateChanged(async (firebaseUser) => {
@@ -37,25 +37,32 @@ export function AuthProvider({ children }) {
 
       setLoading(true)
       try {
+        // ── Step 1: Try hospital table first ──────────────────────────────
+        // WHY: hospitals are NOT in the users table at all.
+        // If /hospitals/me succeeds → this is a hospital account. Stop here.
+        try {
+          const hospitalData = await fetchHospitalProfile()
+          setRole('hospital')        // manually set — HospitalResponse has no role field
+          setProfile(hospitalData)
+          setHospital(hospitalData)
+          return                     // ✅ done — skip /users/me entirely
+        } catch {
+          // Not a hospital — fall through to users table
+        }
+
+        // ── Step 2: Try users table (donor / admin) ───────────────────────
         const me = await fetchMe()
         setRole(me?.role || null)
         setProfile(me || null)
 
-        // If hospital user — fetch hospital profile to get lat/lng
-        if (me?.role === 'hospital') {
-          try {
-            const hospitalData = await fetchHospitalProfile()
-            setHospital(hospitalData)
-          } catch (e) {
-            console.warn('Could not fetch hospital profile:', e)
-          }
-        }
       } catch (e) {
+        // Neither table recognised this Firebase user
         setError(e)
       } finally {
         setLoading(false)
       }
     })
+
     return () => unsub()
   }, [])
 
@@ -76,16 +83,7 @@ export function AuthProvider({ children }) {
   }
 
   const value = useMemo(
-    () => ({
-      user,
-      role,
-      profile,
-      hospital,     // ← expose hospital profile
-      loading,
-      error,
-      login,
-      logout,
-    }),
+    () => ({ user, role, profile, hospital, loading, error, login, logout }),
     [user, role, profile, hospital, loading, error],
   )
 
