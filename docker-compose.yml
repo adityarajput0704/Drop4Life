@@ -1,0 +1,73 @@
+# docker-compose.yml
+# Location: Drop4life/docker-compose.yml
+# Purpose: LOCAL TESTING ONLY — not used on Render
+#
+# Spins up 3 services:
+#   db       → PostgreSQL (replaces your local install)
+#   redis    → Redis (replaces your local install)
+#   backend  → Your FastAPI app (built from Dockerfile)
+#
+# Usage:
+#   docker compose up --build     ← first time
+#   docker compose up             ← subsequent runs
+#   docker compose down           ← stop everything
+
+version: "3.9"
+
+services:
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1011
+      POSTGRES_DB: blood_bank
+    ports:
+      - "5433:5432"   # 5433 on host → avoids conflict with your local postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"   # 6380 on host → avoids conflict with your local redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      # These override .env when running via docker compose
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/blood_bank
+      REDIS_URL: redis://redis:6379
+      ENVIRONMENT: development
+      DEBUG: "false"
+      PORT: "8000"
+      # Pull these from your actual .env file
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
+      FIREBASE_SERVICE_ACCOUNT_BASE64: ${FIREBASE_SERVICE_ACCOUNT_BASE64}
+      SECRET_KEY: ${SECRET_KEY}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Restart unless manually stopped
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
