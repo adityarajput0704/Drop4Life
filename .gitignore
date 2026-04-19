@@ -27,7 +27,7 @@ Thumbs.db
 dist/
 build/
 *.egg-info/
-
+*.sql
 # Miscellaneous
 *.class
 *.log
