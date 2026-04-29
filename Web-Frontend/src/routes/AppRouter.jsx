@@ -5,7 +5,7 @@ import LoadingSpinner from '../components/LoadingSpinner.jsx'
 import ToastHost from '../components/ToastHost.jsx'
 
 import Login from '../pages/Login.jsx'
-import Register from '../pages/register.jsx'
+import Register from '../pages/Register.jsx'
 
 import HospitalDashboard from '../pages/hospital/Dashboard.jsx'
 import HospitalMyRequests from '../pages/hospital/MyRequests.jsx'
