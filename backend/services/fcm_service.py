@@ -1,5 +1,7 @@
 import httpx
 import logging
+import json
+import base64
 from google.oauth2 import service_account
 from google.auth.transport.requests import Request as GoogleRequest
 from backend.config import get_settings
