@@ -16,15 +16,31 @@ FCM_SCOPES = ["https://www.googleapis.com/auth/firebase.messaging"]
 def _get_access_token() -> str:
     """
     Get a short-lived OAuth2 access token using the service account.
-    FCM HTTP v1 API requires this — NOT the legacy server key.
+    
+    Production: reads from FIREBASE_SERVICE_ACCOUNT_BASE64 env var
+    Local dev:  falls back to file path
     """
-    credentials = service_account.Credentials.from_service_account_file(
-        FCM_SERVICE_ACCOUNT_FILE,
-        scopes=FCM_SCOPES,
-    )
+    settings = get_settings()
+
+    if settings.FIREBASE_SERVICE_ACCOUNT_BASE64:
+        # ── Production path ──────────────────────────────────────
+        decoded = base64.b64decode(
+            settings.FIREBASE_SERVICE_ACCOUNT_BASE64
+        ).decode("utf-8")
+        service_account_info = json.loads(decoded)
+        credentials = service_account.Credentials.from_service_account_info(
+            service_account_info,
+            scopes=FCM_SCOPES,
+        )
+    else:
+        # ── Local dev path ────────────────────────────────────────
+        credentials = service_account.Credentials.from_service_account_file(
+            settings.FIREBASE_SERVICE_ACCOUNT_PATH,
+            scopes=FCM_SCOPES,
+        )
+
     credentials.refresh(GoogleRequest())
     return credentials.token
-
 
 def send_push_notification(
     fcm_token: str,
