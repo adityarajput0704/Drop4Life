@@ -621,23 +621,310 @@ pytest tests/test_donors.py -v
 
 ---
 
-## 🤝 Contributing
+# Contributing to Drop4Life
 
-Contributions are welcome! Please follow these steps:
+Drop4Life is a real-time blood donation platform built with FastAPI, PostgreSQL, Redis, Flutter, and React.
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/your-feature`)
-3. Make your changes with clear, descriptive commits
-4. Ensure existing tests pass (`pytest`)
-5. Push to your fork and open a Pull Request
-
-Please read the coding standards:
-- Follow the existing module structure — don't mix concerns
-- All new routes must have Pydantic schemas for request and response
-- All protected routes must use the `get_current_user` dependency
-- Never hardcode secrets — always use `settings` from `core/config.py`
+This document lists every known technical gap in the system — prioritised by severity. If you want to contribute meaningfully to a production health-tech project, start here.
 
 ---
+
+## How to Contribute
+
+1. Fork the repository
+2. Pick an open gap below
+3. Open an issue referencing the gap (use the gap title as the issue title)
+4. Get confirmation before starting work on large changes
+5. Submit a PR with tests and a clear description of what changed and why
+
+---
+
+## Critical Gaps — Blocks Production Scale
+
+These directly affect the core promise of the system: matching a donor within 2 seconds during a blood emergency.
+
+---
+
+### 1. No spatial indexing on donor location columns
+
+**File:** `backend/models/donor.py`, `alembic/versions/`
+
+**Problem:**
+Donor matching currently fetches all donors from PostgreSQL, then filters by distance in Python using the Haversine formula. At 10,000+ donors this will take 5–10 seconds — well past the 2-second target.
+
+**What's needed:**
+- Add PostGIS extension to PostgreSQL
+- Add `GEOGRAPHY` or `GEOMETRY` column type to the donors table
+- Create a spatial index (`GIST`) on that column
+- Rewrite the donor search query to use `ST_DWithin` — filtering happens inside the DB, not Python
+- Create an Alembic migration for the schema change
+
+**Skills needed:** PostgreSQL, PostGIS, SQLAlchemy, Alembic
+
+**Reference:** [PostGIS ST_DWithin docs](https://postgis.net/docs/ST_DWithin.html)
+
+---
+
+### 2. Single Uvicorn worker — no horizontal scaling
+
+**File:** `Dockerfile`, `render.yaml` (to be created)
+
+**Problem:**
+The app runs with `--workers 1`. A single CPU-intensive request (like a large donor search) blocks all other requests. One crash takes the entire system down.
+
+**What's needed:**
+- Configure Uvicorn to use multiple workers via `WEB_CONCURRENCY` env var
+- Ensure WebSocket state (currently in-memory via `ConnectionManager`) is moved to Redis so all workers share the same connection state
+- Update `backend/core/websocket_manager.py` to use Redis Pub/Sub as the shared state layer instead of a local dict
+
+**Skills needed:** FastAPI, Redis Pub/Sub, WebSockets, Docker
+
+**Note:** The Redis Pub/Sub scaffolding already exists in the codebase — it needs to be completed and wired to the WebSocket manager.
+
+---
+
+### 3. Cold start latency on free hosting tier
+
+**File:** `backend/routers/` (new health endpoint), deployment config
+
+**Problem:**
+Render free tier spins down after 15 minutes of inactivity. Cold starts take 20–30 seconds. In a blood emergency, this is unacceptable.
+
+**What's needed:**
+- Add a `/health` endpoint that returns system status (DB connectivity, Redis connectivity, uptime)
+- Document UptimeRobot or similar keep-alive configuration
+- Add a `render.yaml` file for infrastructure-as-code deployment config
+- Optionally: add a `/health/ready` and `/health/live` endpoint following Kubernetes liveness/readiness probe conventions
+
+**Expected response from `/health`:**
+```json
+{
+  "status": "healthy",
+  "database": "connected",
+  "redis": "connected",
+  "uptime_seconds": 3600,
+  "version": "1.0.0"
+}
+```
+
+**Skills needed:** FastAPI, PostgreSQL, Redis, deployment config
+
+---
+
+### 4. No database connection pooling configuration
+
+**File:** `backend/database.py`
+
+**Problem:**
+SQLAlchemy is using default pool settings. Under concurrent load, the app will exhaust PostgreSQL connections and throw `OperationalError: connection pool exhausted`.
+
+**What's needed:**
+- Configure `pool_size`, `max_overflow`, `pool_recycle`, and `pool_pre_ping` on the SQLAlchemy engine
+- Enable Neon's connection pooler (PgBouncer) by switching to the pooled connection string
+- Add a connection pool health check to the `/health` endpoint
+
+**Recommended settings for a small production deployment:**
+```python
+engine = create_engine(
+    settings.DATABASE_URL,
+    pool_size=5,
+    max_overflow=10,
+    pool_recycle=300,
+    pool_pre_ping=True,
+)
+```
+
+**Skills needed:** SQLAlchemy, PostgreSQL, connection pooling concepts
+
+---
+
+##  Hardening Gaps — Needed Before Real Users
+
+---
+
+### 5. PII exposed in raw error responses
+
+**File:** `backend/main.py` (global exception handler)
+
+**Problem:**
+Unhandled exceptions return raw Python tracebacks or SQLAlchemy error messages to the client. These can expose blood type, location coordinates, Firebase UIDs, and database schema details.
+
+**What's needed:**
+- Add a global exception handler in `main.py` that catches all unhandled exceptions
+- Return a sanitised `500` response with a generic message and a unique error ID
+- Log the full error server-side (with the error ID) so it can be debugged without exposing it to the client
+
+**Example:**
+```python
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    error_id = str(uuid.uuid4())[:8]
+    logger.error(f"[UNHANDLED ERROR] id={error_id} path={request.url.path} error={exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An internal error occurred.", "error_id": error_id}
+    )
+```
+
+**Skills needed:** FastAPI, Python exception handling, logging
+
+---
+
+### 6. No audit trail for sensitive data access
+
+**File:** `backend/models/` (new `AuditLog` model), `backend/dependencies/auth.py`
+
+**Problem:**
+There is no record of who accessed which donor's data, when, and from which IP. This is a basic requirement for healthcare data compliance (DISHA in India, HIPAA internationally).
+
+**What's needed:**
+- Create an `AuditLog` model with fields: `user_id`, `action`, `resource_type`, `resource_id`, `ip_address`, `timestamp`
+- Create a FastAPI dependency `log_access(resource_type, resource_id)` that writes to this table
+- Apply it to sensitive routes: `GET /donors/{id}`, `GET /users/me`, `PATCH /blood-requests/{id}/accept`
+- Create an Alembic migration
+
+**Skills needed:** SQLAlchemy, FastAPI dependencies, Alembic
+
+---
+
+### 7. No user data deletion endpoint (Right to be Forgotten)
+
+**File:** `backend/routers/users.py`
+
+**Problem:**
+Users cannot delete their own accounts. Under GDPR and India's DPDP Act, users have the right to request deletion of their personal data.
+
+**What's needed:**
+- Add `DELETE /users/me` endpoint
+- Soft delete or hard delete the user record
+- Anonymise associated blood request records (replace donor name with "Anonymous Donor")
+- Revoke the Firebase account via Firebase Admin SDK
+- Return `204 No Content` on success
+
+**Skills needed:** FastAPI, SQLAlchemy, Firebase Admin SDK
+
+---
+
+### 8. No data retention policy
+
+**File:** `backend/core/scheduler.py`
+
+**Problem:**
+Donor location updates, old fulfilled blood requests, and system logs are kept indefinitely. This is a compliance risk and a storage cost.
+
+**What's needed:**
+- Add a scheduled job (APScheduler already exists in the project) that runs weekly
+- Purge donor location history older than 30 days
+- Archive fulfilled/cancelled blood requests older than 1 year
+- Add configuration variables: `LOCATION_RETENTION_DAYS`, `REQUEST_ARCHIVE_DAYS`
+
+**Skills needed:** APScheduler, SQLAlchemy, data lifecycle management
+
+---
+
+### 9. asyncio.run() inside sync background tasks
+
+**File:** `backend/services/notification_services.py`
+
+**Problem:**
+`asyncio.run()` creates a new event loop. Inside FastAPI's async context, calling it from a sync function that runs inside the existing event loop causes `RuntimeError: This event loop is already running` — intermittently in production.
+
+**What's needed:**
+- Replace all `asyncio.run(_broadcast(...))` calls with proper async handling
+- Convert notification functions to `async def` 
+- Use `asyncio.create_task()` or `BackgroundTasks` correctly
+- Add error handling that does not swallow failures silently
+
+**Skills needed:** Python asyncio, FastAPI background tasks
+
+---
+
+##  Feature Gaps — Good First Issues
+
+These are lower risk and good starting points for new contributors.
+
+---
+
+### 10. API versioning
+
+**File:** `backend/main.py`, all routers
+
+**Problem:**
+All routes are at `/donors`, `/blood-requests` etc. with no version prefix. Adding breaking changes in future requires coordinating all clients simultaneously.
+
+**What's needed:**
+- Prefix all routes with `/api/v1/`
+- Add redirect from legacy unversioned routes for backwards compatibility
+- Update Flutter and web frontend base URLs
+
+---
+
+### 11. Pytest test suite
+
+**File:** `tests/` (new directory)
+
+**Problem:**
+There are zero automated tests. Every deploy is a manual verification exercise.
+
+**What's needed:**
+- Set up `pytest` with `httpx.AsyncClient` for async route testing
+- Write tests for: user registration, donor creation, blood request lifecycle (create → accept → fulfil)
+- Add a GitHub Actions step that runs tests on every PR
+- Minimum 60% coverage on routers
+
+---
+
+### 12. Flutter offline support
+
+**File:** `App/lib/providers/`
+
+**Problem:**
+When the device has no internet, the app shows a blank screen or spinner indefinitely. In a rural emergency, connectivity is unreliable.
+
+**What's needed:**
+- Cache the last successful donor list and blood request list using `shared_preferences`
+- Show cached data with a "Last updated X minutes ago" banner when offline
+- Retry API calls automatically when connectivity is restored using `connectivity_plus` package
+
+---
+
+## Development Setup
+
+```bash
+# Clone
+git clone https://github.com/adityarajput0704/Drop4Life
+cd Drop4Life
+
+# Backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env  # fill in your values
+
+# Run with Docker (recommended)
+docker compose up --build
+
+# Flutter
+cd App
+flutter pub get
+flutter run
+```
+
+---
+
+## Code Standards
+
+- Backend: follow existing router/schema/model/service separation
+- All new endpoints must have Pydantic request and response schemas
+- All new database columns must have an Alembic migration
+- No hardcoded secrets — everything goes through `backend/config.py`
+- PRs without a description of the gap being fixed will not be reviewed
+
+---
+
+## Questions
+
+Open a GitHub Discussion or reach out via the issue tracker. All contributions are welcome — from fixing a typo in docs to implementing PostGIS spatial indexing.
 
 ## 🔒 Security Notes
 
