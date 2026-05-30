@@ -59,7 +59,7 @@ This project was built progressively — from a bare FastAPI server to a fully d
 | **ORM** | SQLAlchemy 2.0 | Database modeling & queries |
 | **Migrations** | Alembic | Schema version control |
 | **Database** | PostgreSQL | Primary relational data store |
-| **Cache / PubSub** | Redis 7.x | Caching, Rate limiting, Real-time pub/sub |
+| **Cache** | Redis 7.x | Caching, Rate limiting|
 | **Auth** | Firebase Auth + JWT | Identity & token verification |
 | **Auth Middleware** | firebase-admin, PyJWT | Token decoding & Firebase SDK |
 | **Async HTTP** | httpx | External API calls with retry logic |
